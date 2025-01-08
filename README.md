@@ -1,6 +1,6 @@
 # base-twitter-adaptor
 
-A base Twitter adapter for building LLM-powered Twitter bots. This package provides a clean, type-safe interface for interacting with the Twitter API, with built-in support for handling mentions, managing conversations, and rate limiting.
+A type-safe Twitter API adapter with built-in LLM support for building AI-powered Twitter bots. This package provides a clean, type-safe interface for interacting with the Twitter API, with built-in support for handling mentions, managing conversations, and rate limiting.
 
 ## Installation
 
@@ -25,7 +25,7 @@ X_ACCESS_TOKEN_SECRET=your_access_token_secret
 
 ## Usage
 
-### Basic Twitter Service
+### Basic Twitter Service with Polling
 
 ```typescript
 import { TwitterService, TwitterServiceConfig } from 'base-twitter-adaptor';
@@ -35,18 +35,25 @@ const config: TwitterServiceConfig = {
   apiSecret: process.env.X_API_SECRET!,
   accessToken: process.env.X_ACCESS_TOKEN,
   accessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET,
-  pollIntervalMs: 60000 // Poll every minute
+  pollIntervalMs: 60000, // Poll every minute
+  threadHistoryLimit: 50  // Keep last 50 messages in thread history
 };
 
 const twitterService = new TwitterService(config);
 
-// Handle new mentions
+// Handle new mentions from polling
 twitterService.on('newMention', async (mentionEvent) => {
   console.log('New mention:', mentionEvent);
   // Handle the mention event
+  await twitterService.replyToTweet(mentionEvent.tweetId, "Thanks for the mention!");
 });
 
-// Start the service
+// Handle rate limits
+twitterService.on('rateLimitWarning', (warning) => {
+  console.warn('Rate limit warning:', warning);
+});
+
+// Start the service (begins polling)
 await twitterService.start();
 ```
 
@@ -60,12 +67,12 @@ const twitterConfig = {
   apiSecret: process.env.X_API_SECRET!,
   accessToken: process.env.X_ACCESS_TOKEN,
   accessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET,
-  pollIntervalMs: 10000
+  pollIntervalMs: 10000  // Poll every 10 seconds
 };
 
 const llmToolAdapter = new LLMToolAdapter({ twitterConfig });
 
-// Handle Twitter events
+// Handle Twitter events from polling
 llmToolAdapter.on('newTwitterMessage', (response) => {
   console.log("New twitter message for LLM:", response);
   // Send to your LLM
@@ -75,7 +82,7 @@ llmToolAdapter.on('rateLimitWarning', (rateLimit) => {
   console.warn('Rate limit warning:', rateLimit);
 });
 
-// Start the adapter
+// Start the adapter (begins polling)
 await llmToolAdapter.start();
 
 // Example LLM actions
@@ -87,13 +94,14 @@ const reply = await llmToolAdapter.replyToTweet(tweetId, "Thanks for the mention
 
 ## Features
 
-- Polling for new mentions
-- Event-based architecture for handling mentions
-- Thread context management
-- Rate limit handling
-- Structured logging
-- TypeScript support
-- LLM-friendly adapter interface
+- **Automated Mention Polling**: Configurable polling interval for monitoring mentions
+- **Thread Context Management**: Maintains conversation history with configurable limits
+- **Event-based Architecture**: Real-time events for mentions, rate limits, and errors
+- **Rate Limit Handling**: Built-in rate limit detection and warning events
+- **Type Safety**: Full TypeScript support with comprehensive type definitions
+- **LLM Integration**: Purpose-built adapter for LLM interactions
+- **Structured Logging**: Detailed logging with timestamps and metadata
+- **Error Handling**: Comprehensive error handling and event emission
 
 ## Types
 
@@ -105,8 +113,8 @@ interface TwitterServiceConfig {
   accessToken?: string;
   accessTokenSecret?: string;
   bearerToken?: string;
-  pollIntervalMs?: number;
-  threadHistoryLimit?: number;
+  pollIntervalMs?: number;     // Default: 60000 (1 minute)
+  threadHistoryLimit?: number;  // Default: 50 messages
 }
 ```
 
