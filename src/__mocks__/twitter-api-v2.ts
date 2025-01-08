@@ -28,12 +28,15 @@ const createMockTwitterApiV2 = (): MockTwitterApiV2 => ({
 });
 
 // Create mock Twitter API factory
-const createMockTwitterApi = (): jest.MockedClass<typeof RealTwitterApi> => {
+const createMockTwitterApi = () => {
   const mockTwitterApiV2 = createMockTwitterApiV2();
-  
-  return jest.fn().mockImplementation(() => ({
+  const MockTwitterApi = jest.fn().mockImplementation(() => ({
     v2: mockTwitterApiV2,
-  })) as jest.MockedClass<typeof RealTwitterApi>;
+    getErrors: jest.fn(),
+    getProfileImageInSize: jest.fn(),
+  }));
+
+  return MockTwitterApi as unknown as jest.MockedClass<typeof RealTwitterApi>;
 };
 
 export const TwitterApi = createMockTwitterApi(); 

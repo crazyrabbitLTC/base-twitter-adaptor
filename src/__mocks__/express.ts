@@ -29,7 +29,7 @@ export interface MockExpress {
 // Create mock server factory
 const createMockServer = (): MockServer => {
   const server = new EventEmitter() as MockServer;
-  server.on = jest.fn((event: string, handler: Function) => {
+  server.on = jest.fn((event: string, handler: (...args: any[]) => void) => {
     return EventEmitter.prototype.on.call(server, event, handler);
   });
   return server;
@@ -50,7 +50,7 @@ const createMockExpress = (): MockExpress => {
   const mockServer = createMockServer();
   const mockApp = createMockApp(mockServer);
   
-  const mockExpress = jest.fn(() => mockApp) as MockExpress;
+  const mockExpress = jest.fn(() => mockApp) as unknown as MockExpress;
   mockExpress.json = jest.fn();
   
   return mockExpress;
