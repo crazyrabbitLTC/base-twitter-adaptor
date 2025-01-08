@@ -297,4 +297,59 @@ export class TwitterService {
       threadContext.history = threadContext.history.slice(-this.config.threadHistoryLimit);
     }
   }
+
+  /**
+   * Gets the authenticated user's profile
+   */
+  public async getMyProfile() {
+    try {
+      const response = await this.twitterClient.v2.get('users/me');
+      return response.data;
+    } catch (error) {
+      this.logger.error("Failed to get user profile", { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Searches for tweets matching a query
+   */
+  public async searchTweets(query: string) {
+    try {
+      const searchParameters: Partial<Tweetv2SearchParams> = {
+        "tweet.fields": ["conversation_id", "author_id", "created_at"],
+        max_results: 100
+      };
+      const response = await this.twitterClient.v2.search(query, searchParameters);
+      return response.data;
+    } catch (error) {
+      this.logger.error("Failed to search tweets", { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Posts a new tweet
+   */
+  public async tweet(text: string) {
+    try {
+      const response = await this.twitterClient.v2.tweet(text);
+      this.logger.info("Successfully posted tweet", { text });
+      return response;
+    } catch (error: any) {
+      if (error?.data?.status === 429) {
+        const rateLimitEvent: RateLimitEvent = {
+          tweetId: "",
+          message: text,
+          error,
+        };
+        this.logger.warn("Rate limited when attempting to post tweet", rateLimitEvent);
+        this.emit("rateLimitWarning", rateLimitEvent);
+      } else {
+        this.logger.error("Failed to post tweet", { text, error });
+        this.emit("tweetError", { message: text, error });
+      }
+      throw error;
+    }
+  }
 } 
