@@ -24,6 +24,15 @@ export interface MentionEvent {
 }
 
 /**
+ * Event emitted when a rate limit is hit
+ */
+export interface RateLimitEvent {
+  tweetId: string;
+  message: string;
+  error: any;
+}
+
+/**
  * Message in a thread's history
  */
 export interface Message {
