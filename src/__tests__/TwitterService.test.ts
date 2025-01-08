@@ -2,71 +2,20 @@ import { TwitterService } from '../index';
 import { TwitterServiceConfig, MentionEvent } from '../types';
 import { TwitterApi } from 'twitter-api-v2';
 import express from 'express';
+import { MockApp, MockServer, MockRequest, MockResponse } from '../__mocks__/express';
+import { MockTwitterApiV2 } from '../__mocks__/twitter-api-v2';
 
-// Define types for our mocks
-type MockFn = ReturnType<typeof jest.fn>;
-
-interface MockServer {
-  on: MockFn;
-}
-
-interface MockApp {
-  use: MockFn;
-  post: MockFn;
-  listen: MockFn;
-}
-
-interface MockExpress {
-  (): MockApp;
-  json: MockFn;
-}
-
-// Mock express
-jest.mock('express', () => {
-  const mockListen = jest.fn((port: number, cb?: () => void) => {
-    cb?.();
-    return {
-      on: jest.fn(),
-    };
-  });
-
-  const mockApp = {
-    use: jest.fn(),
-    post: jest.fn(),
-    listen: mockListen,
-  };
-
-  const json = jest.fn();
-  const mockExpress = jest.fn(() => mockApp);
-  (mockExpress as any).json = json;
-  return mockExpress;
-});
-
-// Create a minimal mock of TwitterApiv2
-const mockTwitterApiv2 = {
-  reply: jest.fn(),
-  _prefix: '',
-  readWrite: {},
-  labs: {},
-  readOnly: {},
-};
-
-// Mock twitter-api-v2
-jest.mock('twitter-api-v2', () => {
-  return {
-    TwitterApi: jest.fn().mockImplementation(() => ({
-      v2: mockTwitterApiv2,
-    })),
-  };
-});
+jest.mock('express');
+jest.mock('twitter-api-v2');
 
 const MockedTwitterApi = jest.mocked(TwitterApi);
-const MockedExpress = jest.mocked(express) as unknown as MockExpress;
+const MockedExpress = jest.mocked(express);
 
 describe('TwitterService', () => {
   let service: TwitterService;
   let mockApp: MockApp;
   let mockServer: MockServer;
+  let mockTwitterApiV2: MockTwitterApiV2;
   
   const mockConfig: TwitterServiceConfig = {
     apiKey: 'test-key',
@@ -80,7 +29,7 @@ describe('TwitterService', () => {
     jest.clearAllMocks();
     
     // Setup express mocks
-    mockServer = { on: jest.fn() };
+    mockServer = { on: jest.fn() } as MockServer;
     mockApp = {
       use: jest.fn(),
       post: jest.fn(),
@@ -90,6 +39,21 @@ describe('TwitterService', () => {
       }),
     };
     (MockedExpress as any).mockReturnValue(mockApp);
+    
+    // Setup Twitter API mock
+    mockTwitterApiV2 = {
+      reply: jest.fn(),
+      tweet: jest.fn(),
+      userTimeline: jest.fn(),
+      deleteTweet: jest.fn(),
+      _prefix: '',
+      readWrite: {},
+      labs: {},
+      readOnly: {},
+    };
+    MockedTwitterApi.mockImplementation(() => ({
+      v2: mockTwitterApiV2,
+    }));
     
     service = new TwitterService(mockConfig);
   });
@@ -427,7 +391,7 @@ describe('TwitterService', () => {
       const mockError = new Error('Rate limit exceeded');
       (mockError as any).rateLimitError = true;
 
-      mockTwitterApiv2.reply.mockRejectedValueOnce(mockError);
+      mockTwitterApiV2.reply.mockRejectedValueOnce(mockError);
 
       const serviceWithMock = new TwitterService(mockConfig);
       const mockEmit = jest.spyOn(serviceWithMock, 'emit');
@@ -450,11 +414,11 @@ describe('TwitterService', () => {
       const message = 'test reply';
       const mockResponse = { data: { id: 'reply-id' } };
 
-      mockTwitterApiv2.reply.mockResolvedValueOnce(mockResponse);
+      mockTwitterApiV2.reply.mockResolvedValueOnce(mockResponse);
 
       const response = await service['replyToTweet'](tweetId, message);
       expect(response).toEqual(mockResponse);
-      expect(mockTwitterApiv2.reply).toHaveBeenCalledWith(message, tweetId);
+      expect(mockTwitterApiV2.reply).toHaveBeenCalledWith(message, tweetId);
     });
 
     it('should emit tweetError for non-rate-limit errors', async () => {
@@ -462,7 +426,7 @@ describe('TwitterService', () => {
       const message = 'test reply';
       const mockError = new Error('API error');
 
-      mockTwitterApiv2.reply.mockRejectedValueOnce(mockError);
+      mockTwitterApiV2.reply.mockRejectedValueOnce(mockError);
 
       const mockEmit = jest.spyOn(service, 'emit');
 
@@ -485,7 +449,7 @@ describe('TwitterService', () => {
       const mockError = new Error('Network error');
       mockError.name = 'NetworkError';
 
-      mockTwitterApiv2.reply.mockRejectedValueOnce(mockError);
+      mockTwitterApiV2.reply.mockRejectedValueOnce(mockError);
       const mockEmit = jest.spyOn(service, 'emit');
 
       try {

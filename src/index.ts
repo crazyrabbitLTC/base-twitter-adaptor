@@ -1,6 +1,7 @@
 import { TwitterServiceConfig, MentionEvent, Message, ThreadContext, RateLimitEvent, twitterWebhookSchema } from "./types";
 import winston from "winston";
 import express, { Express, Request, Response } from "express";
+import { Server } from "http";
 import { EventEmitter } from "events";
 import { TwitterApi } from "twitter-api-v2";
 
@@ -14,6 +15,7 @@ export class TwitterService {
   private emitter: EventEmitter;
   private twitterClient: TwitterApi;
   private threads: Map<string, ThreadContext>;
+  private server?: Server;
 
   public on: (event: string | symbol, listener: (...args: any[]) => void) => EventEmitter;
   public emit: (event: string | symbol, ...args: any[]) => boolean;
@@ -75,9 +77,40 @@ export class TwitterService {
         this.emit("serverError", error);
       });
 
+      // Store server instance for cleanup
+      this.server = server;
+
       this.logger.info("Twitter service started");
     } catch (error) {
       this.logger.error("Failed to start Twitter service", { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Stops the Twitter service and cleans up resources
+   */
+  public async stop() {
+    try {
+      if (this.server) {
+        await new Promise<void>((resolve, reject) => {
+          this.server!.close((err: Error | undefined) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+        this.server = undefined;
+      }
+
+      // Clear all event listeners
+      this.emitter.removeAllListeners();
+      
+      // Clear thread history
+      this.threads.clear();
+
+      this.logger.info("Twitter service stopped");
+    } catch (error) {
+      this.logger.error("Failed to stop Twitter service", { error });
       throw error;
     }
   }
