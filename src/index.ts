@@ -1,21 +1,21 @@
-import { TwitterServiceConfig, MentionEvent, Message, ThreadContext, RateLimitEvent, twitterWebhookSchema } from "./types";
+import { TwitterServiceConfig, MentionEvent, Message, ThreadContext, RateLimitEvent } from "./types";
 import winston from "winston";
-import express, { Express, Request, Response } from "express";
-import { Server } from "http";
 import { EventEmitter } from "events";
-import { TwitterApi } from "twitter-api-v2";
+import { TwitterApi, TweetV2, UserV2, TwitterApiv2, Tweetv2SearchParams } from "twitter-api-v2";
 
 /**
- * Service for handling Twitter interactions including webhooks and mentions
+ * Service for handling Twitter interactions using polling
  */
 export class TwitterService {
   private config: TwitterServiceConfig;
   private logger: winston.Logger;
-  private app: Express;
   private emitter: EventEmitter;
   private twitterClient: TwitterApi;
   private threads: Map<string, ThreadContext>;
-  private server?: Server;
+  private pollInterval?: NodeJS.Timeout;
+  private lastMentionId?: string;
+  private currentUserId?: string;
+  private currentUsername?: string;
 
   public on: (event: string | symbol, listener: (...args: any[]) => void) => EventEmitter;
   public emit: (event: string | symbol, ...args: any[]) => boolean;
@@ -28,10 +28,10 @@ export class TwitterService {
     this.config = {
       ...config,
       threadHistoryLimit: config.threadHistoryLimit ?? 50,
+      pollIntervalMs: config.pollIntervalMs ?? 60000, // Default to 1 minute
     };
     this.threads = new Map();
     this.emitter = new EventEmitter();
-    this.app = express();
 
     // Bind event emitter methods
     this.on = this.emitter.on.bind(this.emitter);
@@ -73,24 +73,22 @@ export class TwitterService {
   }
 
   /**
-   * Starts the Twitter service and webhook server
+   * Starts the Twitter service and polling mechanism
    */
   public async start() {
     try {
-      this.app.use(express.json());
-      this.app.post("/webhook", this.webhook.bind(this));
+      // Get authenticated user info for mention filtering
+      const meResponse = await this.twitterClient.v2.get('users/me');
+      this.currentUserId = meResponse.data.id;
+      this.currentUsername = meResponse.data.username;
+      this.logger.info(`Starting service for user @${this.currentUsername} with id ${this.currentUserId}`);
 
-      const server = this.app.listen(this.config.webhookPort, () => {
-        this.logger.info(`Server is running on port ${this.config.webhookPort}`);
-      });
-
-      server.on("error", (error) => {
-        this.logger.error("Server error occurred", { error });
-        this.emit("serverError", error);
-      });
-
-      // Store server instance for cleanup
-      this.server = server;
+      // Start polling for mentions
+      await this.pollForMentions();
+      this.pollInterval = setInterval(
+        () => this.pollForMentions(),
+        this.config.pollIntervalMs
+      );
 
       this.logger.info("Twitter service started");
     } catch (error) {
@@ -104,14 +102,9 @@ export class TwitterService {
    */
   public async stop() {
     try {
-      if (this.server) {
-        await new Promise<void>((resolve, reject) => {
-          this.server!.close((err: Error | undefined) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        this.server = undefined;
+      if (this.pollInterval) {
+        clearInterval(this.pollInterval);
+        this.pollInterval = undefined;
       }
 
       // Clear all event listeners
@@ -128,39 +121,91 @@ export class TwitterService {
   }
 
   /**
-   * Handles incoming webhook requests
+   * Polls Twitter API for new mentions
    */
-  private async webhook(req: Request, res: Response) {
+  private async pollForMentions() {
     try {
-      res.status(200).send("OK");
-      await this.handleMention(req.body);
-    } catch (error) {
-      this.logger.error("Error processing webhook", { error, body: req.body });
-      // We've already sent 200 OK to Twitter, but we'll emit an error event
-      this.emit("webhookError", { error, body: req.body });
+      if (!this.currentUsername) {
+        const meResponse = await this.twitterClient.v2.get('users/me');
+        this.currentUsername = meResponse.data.username;
+        this.currentUserId = meResponse.data.id;
+      }
+
+      const query = `@${this.currentUsername}`;
+      const searchParameters: Partial<Tweetv2SearchParams> = {
+        "tweet.fields": ["conversation_id", "author_id", "created_at"],
+        since_id: this.lastMentionId,
+        max_results: 100
+      };
+
+      const searchResponse = await this.twitterClient.v2.search(query, searchParameters);
+      
+      if (!searchResponse?.data) return;
+      
+      const tweets = Array.isArray(searchResponse.data) ? searchResponse.data : [searchResponse.data];
+      if (tweets.length > 0) {
+        this.lastMentionId = tweets[0].id; // Update last mention ID
+        
+        // Process mentions in chronological order (oldest first)
+        for (const mention of [...tweets].reverse()) {
+          // Skip tweets with missing required fields
+          if (!mention.conversation_id || !mention.author_id || !mention.created_at) {
+            this.logger.warn("Incomplete tweet data", { mention });
+            continue;
+          }
+
+          // Skip tweets from the authenticated user
+          if (mention.author_id === this.currentUserId) {
+            this.logger.debug("Skipping own tweet", { tweetId: mention.id });
+            continue;
+          }
+
+          // At this point TypeScript knows these fields are defined
+          const tweetData: TweetV2 = {
+            text: mention.text,
+            id: mention.id,
+            conversation_id: mention.conversation_id,
+            author_id: mention.author_id,
+            created_at: mention.created_at,
+            edit_history_tweet_ids: [mention.id]
+          };
+
+          await this.handleMention({
+            tweet: tweetData
+          });
+        }
+      }
+    } catch (error: any) {
+      if (error?.data?.status === 429) {
+        const rateLimitEvent: RateLimitEvent = {
+          tweetId: "",
+          message: "",
+          error,
+        };
+        this.logger.warn("Rate limited when polling for mentions", { error });
+        this.emit("rateLimitWarning", rateLimitEvent);
+      } else {
+        this.logger.error("Error polling for mentions", { error });
+        this.emit("pollError", { error });
+      }
     }
   }
 
   /**
-   * Processes mention events from the webhook
+   * Processes mention events
    */
-  private async handleMention(mention: unknown) {
-    this.logger.info("Received webhook", mention);
+  private async handleMention(mention: { tweet: TweetV2 }) {
+    this.logger.info("Processing mention", mention);
 
-    const result = twitterWebhookSchema.safeParse(mention);
-
-    if (!result.success) {
-      this.logger.warn("Invalid mention format", {
-        mention,
-        error: result.error.format(),
-      });
-      this.emit("invalidMention", { mention, error: result.error });
+    const tweet = mention.tweet;
+    if (!tweet) {
+      this.logger.warn("No tweet data in mention", { mention });
       return;
     }
 
-    const tweet = result.data.tweet;
-    if (!tweet) {
-      this.logger.warn("No tweet data in mention", { mention });
+    // Ensure required fields are present
+    if (!tweet.text || !tweet.id || !tweet.conversation_id || !tweet.author_id) {
+      this.logger.warn("Missing required tweet fields", { tweet });
       return;
     }
 
@@ -191,7 +236,12 @@ export class TwitterService {
    */
   private async replyToTweet(tweetId: string, message: string) {
     try {
-      const response = await this.twitterClient.v2.reply(message, tweetId);
+      const response = await this.twitterClient.v2.tweet({
+        text: message,
+        reply: {
+          in_reply_to_tweet_id: tweetId
+        }
+      });
       this.logger.info("Successfully responded to tweet", {
         tweetId,
         message,
@@ -199,7 +249,7 @@ export class TwitterService {
       });
       return response;
     } catch (error: any) {
-      if (error?.rateLimitError) {
+      if (error?.data?.status === 429) {
         const rateLimitEvent: RateLimitEvent = {
           tweetId,
           message,
@@ -240,7 +290,10 @@ export class TwitterService {
     threadContext.history.push(message);
 
     // Apply history limit if configured
-    if (this.config.threadHistoryLimit && threadContext.history.length > this.config.threadHistoryLimit) {
+    if (
+      this.config.threadHistoryLimit &&
+      threadContext.history.length > this.config.threadHistoryLimit
+    ) {
       threadContext.history = threadContext.history.slice(-this.config.threadHistoryLimit);
     }
   }

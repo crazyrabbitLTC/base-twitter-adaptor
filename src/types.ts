@@ -8,8 +8,6 @@ export interface TwitterServiceConfig {
   apiKey: string;
   /** Twitter API Secret */
   apiSecret: string;
-  /** Port number for the webhook server */
-  webhookPort: number;
   /** Optional bearer token for authentication */
   bearerToken?: string;
   /** Optional access token for user-specific actions */
@@ -18,6 +16,10 @@ export interface TwitterServiceConfig {
   accessTokenSecret?: string;
   /** Maximum number of messages to keep in thread history */
   threadHistoryLimit?: number;
+  /** Interval in milliseconds between polling for mentions */
+  pollIntervalMs?: number;
+  /** Port number for the webhook server */
+  webhookPort?: number;
 }
 
 /**
