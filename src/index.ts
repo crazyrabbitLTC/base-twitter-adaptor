@@ -51,13 +51,25 @@ export class TwitterService {
       transports: [new winston.transports.Console()],
     });
 
-    // Initialize Twitter client
-    this.twitterClient = config.bearerToken
-      ? new TwitterApi(config.bearerToken)
-      : new TwitterApi({
-          appKey: config.apiKey,
-          appSecret: config.apiSecret,
-        });
+    // Initialize Twitter client with the most specific credentials available
+    if (config.accessToken && config.accessTokenSecret) {
+      // Use user-specific credentials if available
+      this.twitterClient = new TwitterApi({
+        appKey: config.apiKey,
+        appSecret: config.apiSecret,
+        accessToken: config.accessToken,
+        accessSecret: config.accessTokenSecret,
+      });
+    } else if (config.bearerToken) {
+      // Fall back to bearer token if available
+      this.twitterClient = new TwitterApi(config.bearerToken);
+    } else {
+      // Fall back to app-only credentials
+      this.twitterClient = new TwitterApi({
+        appKey: config.apiKey,
+        appSecret: config.apiSecret,
+      });
+    }
   }
 
   /**

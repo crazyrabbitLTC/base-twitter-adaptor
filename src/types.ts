@@ -12,6 +12,10 @@ export interface TwitterServiceConfig {
   webhookPort: number;
   /** Optional bearer token for authentication */
   bearerToken?: string;
+  /** Optional access token for user-specific actions */
+  accessToken?: string;
+  /** Optional access token secret for user-specific actions */
+  accessTokenSecret?: string;
   /** Maximum number of messages to keep in thread history */
   threadHistoryLimit?: number;
 }

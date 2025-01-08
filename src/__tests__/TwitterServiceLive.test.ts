@@ -7,25 +7,27 @@ const shouldRunLiveTests = process.env.CI || process.env.RUN_LIVE_TESTS;
 
 // Only run these tests if we have the required environment variables
 const hasCredentials = 
-  process.env.TWITTER_API_KEY &&
-  process.env.TWITTER_API_SECRET &&
-  process.env.TWITTER_BEARER_TOKEN;
+  process.env.X_API_KEY &&
+  process.env.X_API_SECRET &&
+  (process.env.X_BEARER_TOKEN || (process.env.X_ACCESS_TOKEN && process.env.X_ACCESS_TOKEN_SECRET));
 
 describe('TwitterService Live Tests', () => {
   let service: TwitterService;
   let twitterClient: TwitterApi;
 
   const config: TwitterServiceConfig = {
-    apiKey: process.env.TWITTER_API_KEY || '',
-    apiSecret: process.env.TWITTER_API_SECRET || '',
+    apiKey: process.env.X_API_KEY || '',
+    apiSecret: process.env.X_API_SECRET || '',
     webhookPort: 3000,
-    bearerToken: process.env.TWITTER_BEARER_TOKEN,
+    bearerToken: process.env.X_BEARER_TOKEN,
+    accessToken: process.env.X_ACCESS_TOKEN,
+    accessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET,
   };
 
   beforeAll(() => {
     if (shouldRunLiveTests && !hasCredentials) {
       throw new Error(
-        'Missing Twitter API credentials. Set TWITTER_API_KEY, TWITTER_API_SECRET, and TWITTER_BEARER_TOKEN environment variables.'
+        'Missing X API credentials. Set X_API_KEY, X_API_SECRET, and either X_BEARER_TOKEN or both X_ACCESS_TOKEN and X_ACCESS_TOKEN_SECRET environment variables.'
       );
     }
   });
@@ -33,7 +35,17 @@ describe('TwitterService Live Tests', () => {
   beforeEach(() => {
     if (shouldRunLiveTests && hasCredentials) {
       service = new TwitterService(config);
-      twitterClient = new TwitterApi(config.bearerToken!);
+      // Initialize the test client with the most specific credentials available
+      if (process.env.X_ACCESS_TOKEN && process.env.X_ACCESS_TOKEN_SECRET) {
+        twitterClient = new TwitterApi({
+          appKey: config.apiKey,
+          appSecret: config.apiSecret,
+          accessToken: config.accessToken!,
+          accessSecret: config.accessTokenSecret!,
+        });
+      } else {
+        twitterClient = new TwitterApi(config.bearerToken!);
+      }
     }
   });
 
