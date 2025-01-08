@@ -4,9 +4,11 @@ import { TwitterApi } from 'twitter-api-v2';
 import express from 'express';
 import { MockApp, MockServer, MockRequest, MockResponse } from '../__mocks__/express';
 import { MockTwitterApiV2 } from '../__mocks__/twitter-api-v2';
+import mockExpress from '../__mocks__/express';
 
 jest.mock('express');
 jest.mock('twitter-api-v2');
+jest.mock('winston');
 
 const MockedTwitterApi = jest.mocked(TwitterApi);
 const MockedExpress = jest.mocked(express);
@@ -29,10 +31,28 @@ describe('TwitterService', () => {
     jest.clearAllMocks();
     
     // Setup express mocks
-    mockServer = { on: jest.fn() } as MockServer;
+    mockServer = {
+      on: jest.fn(),
+      emit: jest.fn(),
+      close: jest.fn(),
+      addListener: jest.fn(),
+      once: jest.fn(),
+      prependListener: jest.fn(),
+      prependOnceListener: jest.fn(),
+      removeListener: jest.fn(),
+      removeAllListeners: jest.fn(),
+      setMaxListeners: jest.fn(),
+      getMaxListeners: jest.fn(),
+      listeners: jest.fn(),
+      rawListeners: jest.fn(),
+      listenerCount: jest.fn(),
+      eventNames: jest.fn(),
+    } as unknown as MockServer;
+    
     mockApp = {
       use: jest.fn(),
       post: jest.fn(),
+      get: jest.fn(),
       listen: jest.fn().mockImplementation((port: number, cb?: () => void) => {
         if (cb) cb();
         return mockServer;
@@ -40,7 +60,7 @@ describe('TwitterService', () => {
     };
     (MockedExpress as any).mockReturnValue(mockApp);
     
-    // Setup Twitter API mock
+    // Setup Twitter API mock with full interface implementation
     mockTwitterApiV2 = {
       reply: jest.fn(),
       tweet: jest.fn(),
@@ -51,9 +71,34 @@ describe('TwitterService', () => {
       labs: {},
       readOnly: {},
     };
-    MockedTwitterApi.mockImplementation(() => ({
+    
+    const mockTwitterApi = {
       v2: mockTwitterApiV2,
-    }));
+      v1: {},
+      readWrite: {},
+      readOnly: {},
+      currentUser: () => Promise.resolve({}),
+      currentUserV2: () => Promise.resolve({}),
+      login: jest.fn(),
+      logout: jest.fn(),
+      generateAuthLink: jest.fn(),
+      generateOAuth2AuthLink: jest.fn(),
+      refreshOAuth2AccessToken: jest.fn(),
+      revokeOAuth2AccessToken: jest.fn(),
+      clientId: '',
+      clientSecret: '',
+      basicToken: '',
+      bearerToken: '',
+      accessToken: '',
+      accessSecret: '',
+      scope: [],
+      requestClient: {} as any,
+      appLogin: jest.fn(),
+      loginWithOAuth2: jest.fn(),
+      search: jest.fn(),
+    } as unknown as TwitterApi;
+    
+    MockedTwitterApi.mockImplementation(() => mockTwitterApi);
     
     service = new TwitterService(mockConfig);
   });
@@ -109,19 +154,36 @@ describe('TwitterService', () => {
   });
 
   describe('server initialization', () => {
-    let mockExpressApp: any;
+    let mockExpressApp: MockApp;
 
     beforeEach(() => {
       // Reset express mock for each test
       jest.clearAllMocks();
 
       // Create a new mock server for each test
-      mockServer = { on: jest.fn() };
+      mockServer = {
+        on: jest.fn(),
+        emit: jest.fn(),
+        close: jest.fn(),
+        addListener: jest.fn(),
+        once: jest.fn(),
+        prependListener: jest.fn(),
+        prependOnceListener: jest.fn(),
+        removeListener: jest.fn(),
+        removeAllListeners: jest.fn(),
+        setMaxListeners: jest.fn(),
+        getMaxListeners: jest.fn(),
+        listeners: jest.fn(),
+        rawListeners: jest.fn(),
+        listenerCount: jest.fn(),
+        eventNames: jest.fn(),
+      } as unknown as MockServer;
 
       // Create a new mock app for each test
       mockExpressApp = {
         use: jest.fn(),
         post: jest.fn(),
+        get: jest.fn(),
         listen: jest.fn().mockImplementation((port: number, cb?: () => void) => {
           if (cb) cb();
           return mockServer;
@@ -463,6 +525,138 @@ describe('TwitterService', () => {
         message,
         error: mockError,
       });
+    });
+  });
+
+  describe('Logging', () => {
+    let mockLogger: any;
+    
+    beforeEach(() => {
+      // Get the mock logger instance
+      mockLogger = require('winston').createLogger();
+      
+      // Mock the error method to capture meta objects
+      mockLogger.error.mockImplementation((message: string, meta?: any) => {
+        if (meta?.error instanceof Error) {
+          return { message, meta };
+        }
+      });
+      
+      // Mock the warn method to capture meta objects
+      mockLogger.warn.mockImplementation((message: string, meta?: any) => {
+        if (meta?.error instanceof Error) {
+          return { message, meta };
+        }
+      });
+    });
+
+    it('should log server start', async () => {
+      const service = new TwitterService({
+        apiKey: 'test-key',
+        apiSecret: 'test-secret',
+        webhookPort: 3000,
+      });
+
+      await service.start();
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('Server is running on port 3000')
+      );
+    });
+
+    it('should log webhook events', async () => {
+      const service = new TwitterService({
+        apiKey: 'test-key',
+        apiSecret: 'test-secret',
+        webhookPort: 3000,
+      });
+
+      await service.start();
+      
+      // Simulate webhook event
+      const mockWebhookData = {
+        for_user_id: '123',
+        tweet_create_events: [{
+          id_str: '456',
+          user: { id_str: '789' },
+          text: 'test tweet'
+        }]
+      };
+
+      // Get the post handler
+      const postHandler = (mockExpress().post as jest.Mock).mock.calls[0][1];
+      await postHandler({ body: mockWebhookData }, { status: jest.fn().mockReturnThis(), send: jest.fn() });
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Received webhook',
+        expect.objectContaining(mockWebhookData)
+      );
+    });
+
+    it('should log errors', async () => {
+      const service = new TwitterService({
+        apiKey: 'test-key',
+        apiSecret: 'test-secret',
+        webhookPort: 3000,
+      });
+
+      await service.start();
+      
+      // Create an error that will be thrown during webhook processing
+      const mockError = new Error('Invalid webhook data');
+      mockError.name = 'ValidationError';
+      
+      // Mock the webhook handler to throw the error
+      const mockWebhookData = { invalid: 'data' };
+      const mockReq = { body: mockWebhookData };
+      const mockRes = { status: jest.fn().mockReturnThis(), send: jest.fn() };
+      
+      // Mock the handleMention method to throw an error
+      jest.spyOn(service as any, 'handleMention').mockImplementation(() => {
+        throw mockError;
+      });
+      
+      // Get the post handler and simulate the error
+      const postHandler = (mockExpress().post as jest.Mock).mock.calls[0][1];
+      await postHandler(mockReq, mockRes);
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Error processing webhook',
+        expect.objectContaining({
+          error: mockError,
+          body: mockWebhookData
+        })
+      );
+    });
+
+    it('should log rate limit warnings', async () => {
+      const service = new TwitterService({
+        apiKey: 'test-key',
+        apiSecret: 'test-secret',
+        webhookPort: 3000,
+      });
+
+      // Mock Twitter API to throw rate limit error
+      const mockError = new Error('Rate limit exceeded');
+      (mockError as any).rateLimitError = true;
+      
+      mockTwitterApiV2.reply.mockRejectedValueOnce(mockError);
+
+      await service.start();
+      
+      try {
+        await service['replyToTweet']('123', 'test reply');
+      } catch (error) {
+        // Expected error
+      }
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Rate limited when attempting to respond to tweet',
+        expect.objectContaining({
+          tweetId: '123',
+          message: 'test reply',
+          error: expect.any(Error)
+        })
+      );
     });
   });
 }); 
