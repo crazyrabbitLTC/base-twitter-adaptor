@@ -1,6 +1,46 @@
 import { TwitterService } from '../index';
 import { TwitterServiceConfig, MentionEvent } from '../types';
 import { TwitterApi } from 'twitter-api-v2';
+import express from 'express';
+
+// Define types for our mocks
+type MockFn = ReturnType<typeof jest.fn>;
+
+interface MockServer {
+  on: MockFn;
+}
+
+interface MockApp {
+  use: MockFn;
+  post: MockFn;
+  listen: MockFn;
+}
+
+interface MockExpress {
+  (): MockApp;
+  json: MockFn;
+}
+
+// Mock express
+jest.mock('express', () => {
+  const mockListen = jest.fn((port: number, cb?: () => void) => {
+    cb?.();
+    return {
+      on: jest.fn(),
+    };
+  });
+
+  const mockApp = {
+    use: jest.fn(),
+    post: jest.fn(),
+    listen: mockListen,
+  };
+
+  const json = jest.fn();
+  const mockExpress = jest.fn(() => mockApp);
+  (mockExpress as any).json = json;
+  return mockExpress;
+});
 
 // Create a minimal mock of TwitterApiv2
 const mockTwitterApiv2 = {
@@ -21,24 +61,41 @@ jest.mock('twitter-api-v2', () => {
 });
 
 const MockedTwitterApi = jest.mocked(TwitterApi);
+const MockedExpress = jest.mocked(express) as unknown as MockExpress;
 
 describe('TwitterService', () => {
   let service: TwitterService;
+  let mockApp: MockApp;
+  let mockServer: MockServer;
+  
   const mockConfig: TwitterServiceConfig = {
     apiKey: 'test-key',
     apiSecret: 'test-secret',
     webhookPort: 3000,
+    threadHistoryLimit: 50,
   };
 
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
+    
+    // Setup express mocks
+    mockServer = { on: jest.fn() };
+    mockApp = {
+      use: jest.fn(),
+      post: jest.fn(),
+      listen: jest.fn().mockImplementation((port: number, cb?: () => void) => {
+        if (cb) cb();
+        return mockServer;
+      }),
+    };
+    (MockedExpress as any).mockReturnValue(mockApp);
+    
     service = new TwitterService(mockConfig);
   });
 
   describe('constructor', () => {
     it('should create instance with API key/secret', () => {
-      const service = new TwitterService(mockConfig);
       expect(service).toBeInstanceOf(TwitterService);
       expect(MockedTwitterApi).toHaveBeenCalledWith({
         appKey: mockConfig.apiKey,
@@ -54,6 +111,169 @@ describe('TwitterService', () => {
       const service = new TwitterService(configWithBearer);
       expect(service).toBeInstanceOf(TwitterService);
       expect(MockedTwitterApi).toHaveBeenCalledWith(configWithBearer.bearerToken);
+    });
+
+    it('should use default thread history limit if not provided', async () => {
+      const service = new TwitterService({
+        ...mockConfig,
+        threadHistoryLimit: undefined,
+      });
+      const threadId = 'test-thread';
+      const messages = Array.from({ length: 51 }, (_, i) => ({
+        senderId: 'user1',
+        timestamp: i,
+        content: `message ${i}`,
+      }));
+
+      // Add messages one by one to ensure they are processed in order
+      for (const msg of messages) {
+        service['addMessageToThread'](threadId, msg);
+      }
+
+      // Get the context after all messages are added
+      const context = service['getThreadContext'](threadId);
+      
+      // Should keep the most recent 50 messages
+      expect(context.history).toHaveLength(50);
+      // Should have messages 1-50 (not 0-49)
+      expect(context.history[0].content).toBe('message 1');
+      expect(context.history[49].content).toBe('message 50');
+      // Verify messages are in order
+      const contents = context.history.map(msg => msg.content);
+      expect(contents).toEqual(messages.slice(1).map(msg => msg.content));
+    });
+  });
+
+  describe('server initialization', () => {
+    let mockExpressApp: any;
+
+    beforeEach(() => {
+      // Reset express mock for each test
+      jest.clearAllMocks();
+
+      // Create a new mock server for each test
+      mockServer = { on: jest.fn() };
+
+      // Create a new mock app for each test
+      mockExpressApp = {
+        use: jest.fn(),
+        post: jest.fn(),
+        listen: jest.fn().mockImplementation((port: number, cb?: () => void) => {
+          if (cb) cb();
+          return mockServer;
+        }),
+      };
+
+      // Setup the express mock
+      (MockedExpress as any).mockReturnValue(mockExpressApp);
+      (express.json as jest.Mock).mockReturnValue(jest.fn());
+
+      // Create a new service instance
+      service = new TwitterService(mockConfig);
+    });
+
+    it('should start server successfully', async () => {
+      await service.start();
+      expect(mockExpressApp.listen).toHaveBeenCalledWith(mockConfig.webhookPort, expect.any(Function));
+    });
+
+    it('should handle server startup error', async () => {
+      const mockError = new Error('Server startup failed');
+      mockServer.on.mockImplementation((event: string, handler: (error: Error) => void) => {
+        if (event === 'error') {
+          handler(mockError);
+        }
+      });
+
+      const mockEmit = jest.spyOn(service, 'emit');
+      await service.start();
+
+      expect(mockServer.on).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(mockEmit).toHaveBeenCalledWith('serverError', mockError);
+    });
+
+    it('should handle express middleware error', async () => {
+      const mockError = new Error('Middleware error');
+      (express.json as jest.Mock).mockImplementation(() => {
+        throw mockError;
+      });
+
+      await expect(service.start()).rejects.toThrow(mockError);
+    });
+
+    it('should handle port already in use error', async () => {
+      const mockError = new Error('EADDRINUSE');
+      mockServer.on.mockImplementation((event: string, handler: (error: Error) => void) => {
+        if (event === 'error') {
+          handler(mockError);
+        }
+      });
+
+      const mockEmit = jest.spyOn(service, 'emit');
+      await service.start();
+
+      expect(mockServer.on).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(mockEmit).toHaveBeenCalledWith('serverError', mockError);
+    });
+  });
+
+  describe('webhook handling', () => {
+    it('should handle webhook processing error', async () => {
+      const mockReq = {
+        body: { invalid: 'data' },
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+      };
+
+      await service['webhook'](mockReq as any, mockRes as any);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.send).toHaveBeenCalledWith('OK');
+    });
+
+    it('should process valid webhook data', async () => {
+      const validMention = {
+        tweet: {
+          text: 'test mention',
+          id: 'tweet-id',
+          conversation_id: 'thread-id',
+          author_id: 'user-id',
+        },
+      };
+
+      const mockReq = {
+        body: validMention,
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+      };
+      const mockEmit = jest.spyOn(service, 'emit');
+
+      await service['webhook'](mockReq as any, mockRes as any);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.send).toHaveBeenCalledWith('OK');
+      expect(mockEmit).toHaveBeenCalledWith('newMention', expect.any(Object));
+    });
+
+    it('should handle malformed JSON in webhook request', async () => {
+      const mockReq = {
+        body: undefined,
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+      };
+      const mockEmit = jest.spyOn(service, 'emit');
+
+      await service['webhook'](mockReq as any, mockRes as any);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.send).toHaveBeenCalledWith('OK');
+      expect(mockEmit).not.toHaveBeenCalledWith('newMention', expect.any(Object));
     });
   });
 
@@ -78,7 +298,6 @@ describe('TwitterService', () => {
         done();
       });
 
-      // Simulate webhook call
       service['handleMention'](validMention);
     });
 
@@ -91,6 +310,25 @@ describe('TwitterService', () => {
       service['handleMention'](invalidMention);
 
       expect(mockEmit).not.toHaveBeenCalledWith('newMention', expect.any(Object));
+    });
+
+    it('should handle mentions with referenced tweets', () => {
+      const mentionWithRefs = {
+        tweet: {
+          text: 'test mention',
+          id: 'tweet-id',
+          conversation_id: 'thread-id',
+          author_id: 'user-id',
+          referenced_tweets: [
+            { type: 'replied_to', id: 'original-tweet' },
+          ],
+        },
+      };
+
+      const mockEmit = jest.spyOn(service, 'emit');
+      service['handleMention'](mentionWithRefs);
+
+      expect(mockEmit).toHaveBeenCalledWith('newMention', expect.any(Object));
     });
   });
 
@@ -119,7 +357,6 @@ describe('TwitterService', () => {
       const service = new TwitterService(configWithLimit);
       const threadId = 'test-thread';
 
-      // Add three messages
       const messages = [
         { senderId: 'user1', timestamp: 1, content: 'message 1' },
         { senderId: 'user1', timestamp: 2, content: 'message 2' },
@@ -132,6 +369,55 @@ describe('TwitterService', () => {
       expect(context.history).toHaveLength(2);
       expect(context.history).toEqual([messages[1], messages[2]]);
     });
+
+    it('should handle concurrent thread updates', async () => {
+      const service = new TwitterService({
+        ...mockConfig,
+        threadHistoryLimit: 50,
+      });
+      const threadId = 'test-thread';
+      const messages = Array.from({ length: 100 }, (_, i) => ({
+        senderId: 'user1',
+        timestamp: i,
+        content: `message ${i}`,
+      }));
+
+      // Simulate concurrent updates
+      await Promise.all(messages.map(msg => 
+        Promise.resolve().then(() => service['addMessageToThread'](threadId, msg))
+      ));
+
+      const context = service['getThreadContext'](threadId);
+      
+      // Should respect the default limit of 50
+      expect(context.history).toHaveLength(50);
+      
+      // Verify messages are in chronological order
+      const timestamps = context.history.map(msg => msg.timestamp);
+      const sortedTimestamps = [...timestamps].sort((a, b) => a - b);
+      expect(timestamps).toEqual(sortedTimestamps);
+      
+      // Verify we have the last 50 messages
+      expect(timestamps[0]).toBe(50); // Should start at message 50
+      expect(timestamps[49]).toBe(99); // Should end at message 99
+    });
+
+    it('should handle multiple threads independently', () => {
+      const thread1 = 'thread-1';
+      const thread2 = 'thread-2';
+
+      const message1 = { senderId: 'user1', timestamp: 1, content: 'thread 1 message' };
+      const message2 = { senderId: 'user2', timestamp: 2, content: 'thread 2 message' };
+
+      service['addMessageToThread'](thread1, message1);
+      service['addMessageToThread'](thread2, message2);
+
+      const context1 = service['getThreadContext'](thread1);
+      const context2 = service['getThreadContext'](thread2);
+
+      expect(context1.history[0]).toEqual(message1);
+      expect(context2.history[0]).toEqual(message2);
+    });
   });
 
   describe('error handling', () => {
@@ -141,10 +427,8 @@ describe('TwitterService', () => {
       const mockError = new Error('Rate limit exceeded');
       (mockError as any).rateLimitError = true;
 
-      // Mock the reply method to throw rate limit error
       mockTwitterApiv2.reply.mockRejectedValueOnce(mockError);
 
-      // Create a new service instance with the mocked implementation
       const serviceWithMock = new TwitterService(mockConfig);
       const mockEmit = jest.spyOn(serviceWithMock, 'emit');
 
@@ -155,6 +439,62 @@ describe('TwitterService', () => {
       }
 
       expect(mockEmit).toHaveBeenCalledWith('rateLimitWarning', {
+        tweetId,
+        message,
+        error: mockError,
+      });
+    });
+
+    it('should handle successful tweet reply', async () => {
+      const tweetId = 'test-tweet';
+      const message = 'test reply';
+      const mockResponse = { data: { id: 'reply-id' } };
+
+      mockTwitterApiv2.reply.mockResolvedValueOnce(mockResponse);
+
+      const response = await service['replyToTweet'](tweetId, message);
+      expect(response).toEqual(mockResponse);
+      expect(mockTwitterApiv2.reply).toHaveBeenCalledWith(message, tweetId);
+    });
+
+    it('should emit tweetError for non-rate-limit errors', async () => {
+      const tweetId = 'test-tweet';
+      const message = 'test reply';
+      const mockError = new Error('API error');
+
+      mockTwitterApiv2.reply.mockRejectedValueOnce(mockError);
+
+      const mockEmit = jest.spyOn(service, 'emit');
+
+      try {
+        await service['replyToTweet'](tweetId, message);
+      } catch (error) {
+        expect(error).toBe(mockError);
+      }
+
+      expect(mockEmit).toHaveBeenCalledWith('tweetError', {
+        tweetId,
+        message,
+        error: mockError,
+      });
+    });
+
+    it('should handle network errors during tweet reply', async () => {
+      const tweetId = 'test-tweet';
+      const message = 'test reply';
+      const mockError = new Error('Network error');
+      mockError.name = 'NetworkError';
+
+      mockTwitterApiv2.reply.mockRejectedValueOnce(mockError);
+      const mockEmit = jest.spyOn(service, 'emit');
+
+      try {
+        await service['replyToTweet'](tweetId, message);
+      } catch (error) {
+        expect(error).toBe(mockError);
+      }
+
+      expect(mockEmit).toHaveBeenCalledWith('tweetError', {
         tweetId,
         message,
         error: mockError,

@@ -65,14 +65,74 @@ export interface RateLimitEvent {
 }
 
 /**
+ * Twitter entity mention
+ */
+const twitterMentionSchema = z.object({
+  username: z.string(),
+  id: z.string(),
+});
+
+/**
+ * Twitter entities object
+ */
+const twitterEntitiesSchema = z.object({
+  mentions: z.array(twitterMentionSchema).optional(),
+});
+
+/**
+ * Referenced tweet object
+ */
+const referencedTweetSchema = z.object({
+  type: z.string(),
+  id: z.string(),
+});
+
+/**
+ * Tweet object schema
+ */
+const tweetSchema = z.object({
+  text: z.string(),
+  id: z.string(),
+  conversation_id: z.string(),
+  author_id: z.string(),
+  created_at: z.string().optional(),
+  in_reply_to_user_id: z.string().optional(),
+  referenced_tweets: z.array(referencedTweetSchema).optional(),
+  entities: twitterEntitiesSchema.optional(),
+});
+
+/**
+ * Direct message data schema
+ */
+const directMessageDataSchema = z.object({
+  text: z.string(),
+  entities: z.record(z.any()).optional(),
+});
+
+/**
+ * Direct message create schema
+ */
+const directMessageCreateSchema = z.object({
+  message_data: directMessageDataSchema,
+  sender_id: z.string(),
+  target: z.object({
+    recipient_id: z.string(),
+  }).optional(),
+});
+
+/**
+ * Direct message event schema
+ */
+const directMessageEventSchema = z.object({
+  type: z.string(),
+  id: z.string(),
+  message_create: directMessageCreateSchema,
+});
+
+/**
  * Zod schema for validating Twitter webhook payloads
  */
 export const twitterWebhookSchema = z.object({
-  tweet: z.object({
-    text: z.string(),
-    id: z.string(),
-    conversation_id: z.string(),
-    author_id: z.string(),
-  }).optional(),
-  // Add other webhook payload validations as needed
+  tweet: tweetSchema.optional(),
+  direct_message_events: z.array(directMessageEventSchema).optional(),
 }); 

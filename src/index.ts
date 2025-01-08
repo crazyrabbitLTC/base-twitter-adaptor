@@ -23,7 +23,10 @@ export class TwitterService {
    * @param config - Configuration options for the service
    */
   constructor(config: TwitterServiceConfig) {
-    this.config = config;
+    this.config = {
+      ...config,
+      threadHistoryLimit: config.threadHistoryLimit ?? 50,
+    };
     this.threads = new Map();
     this.emitter = new EventEmitter();
     this.app = express();
