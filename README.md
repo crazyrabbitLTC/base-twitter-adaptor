@@ -37,6 +37,9 @@ const config: TwitterServiceConfig = {
   accessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET,
   pollIntervalMs: 60000, // Poll every minute
   threadHistoryLimit: 50, // Keep last 50 messages in thread history
+  includeOwnTweets: true, // Include tweets from the authenticated user
+  logLevel: 'info', // Set logging level
+  sinceId: '1234567890', // Optional: Start polling from a specific tweet
 };
 
 const twitterService = new TwitterService(config);
@@ -51,6 +54,11 @@ twitterService.on('newMention', async mentionEvent => {
 // Handle rate limits
 twitterService.on('rateLimitWarning', warning => {
   console.warn('Rate limit warning:', warning);
+});
+
+// Handle polling errors
+twitterService.on('pollError', error => {
+  console.error('Error during polling:', error);
 });
 
 // Start the service (begins polling)
@@ -68,6 +76,8 @@ const twitterConfig = {
   accessToken: process.env.X_ACCESS_TOKEN,
   accessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET,
   pollIntervalMs: 10000, // Poll every 10 seconds
+  includeOwnTweets: true,
+  logLevel: 'info',
 };
 
 const llmToolAdapter = new LLMToolAdapter({ twitterConfig });
@@ -76,20 +86,73 @@ const llmToolAdapter = new LLMToolAdapter({ twitterConfig });
 llmToolAdapter.on('newTwitterMessage', response => {
   console.log('New twitter message for LLM:', response);
   // Send to your LLM
+  // response.data contains:
+  // - messageId: string (tweet ID)
+  // - threadId: string (conversation ID)
+  // - userId: string (author ID)
+  // - content: string (tweet text)
 });
 
+// Handle rate limit warnings
 llmToolAdapter.on('rateLimitWarning', rateLimit => {
   console.warn('Rate limit warning:', rateLimit);
+  // rateLimit contains:
+  // - error: any (rate limit error details)
+  // - message: string (error message)
+});
+
+// Handle general errors
+llmToolAdapter.on('error', error => {
+  console.error('Error:', error);
+  // error contains:
+  // - success: false
+  // - error: any (error details)
+  // - message: string (error description)
 });
 
 // Start the adapter (begins polling)
-await llmToolAdapter.start();
+const startResult = await llmToolAdapter.start();
+if (!startResult.success) {
+  console.error('Failed to start adapter:', startResult.error);
+  return;
+}
 
-// Example LLM actions
-const profile = await llmToolAdapter.getMyProfile();
-const tweet = await llmToolAdapter.postTweet('Hello from the LLM!');
-const search = await llmToolAdapter.searchTweets('ai');
-const reply = await llmToolAdapter.replyToTweet(tweetId, 'Thanks for the mention!');
+// Example LLM actions with error handling
+try {
+  // Get user profile
+  const profileResponse = await llmToolAdapter.getMyProfile();
+  if (!profileResponse.success) {
+    console.error('Failed to get profile:', profileResponse.error);
+    return;
+  }
+  const profile = profileResponse.data;
+
+  // Post a tweet
+  const tweetResponse = await llmToolAdapter.postTweet('Hello from the LLM!');
+  if (!tweetResponse.success) {
+    console.error('Failed to post tweet:', tweetResponse.error);
+    return;
+  }
+  const tweet = tweetResponse.data;
+
+  // Search tweets
+  const searchResponse = await llmToolAdapter.searchTweets('ai');
+  if (!searchResponse.success) {
+    console.error('Failed to search tweets:', searchResponse.error);
+    return;
+  }
+  const searchResults = searchResponse.data;
+
+  // Reply to a tweet
+  const replyResponse = await llmToolAdapter.replyToTweet(tweet.id, 'Thanks for the mention!');
+  if (!replyResponse.success) {
+    console.error('Failed to reply:', replyResponse.error);
+    return;
+  }
+  const reply = replyResponse.data;
+} catch (error) {
+  console.error('Unexpected error:', error);
+}
 ```
 
 ## Features
@@ -116,6 +179,10 @@ interface TwitterServiceConfig {
   bearerToken?: string;
   pollIntervalMs?: number; // Default: 60000 (1 minute)
   threadHistoryLimit?: number; // Default: 50 messages
+  sinceId?: string; // Start polling from a specific tweet ID
+  skipInitialPoll?: boolean; // Skip the first poll on startup
+  includeOwnTweets?: boolean; // Include tweets from the authenticated user
+  logLevel?: 'error' | 'warn' | 'info' | 'debug' | 'silent'; // Default: 'info'
 }
 ```
 
