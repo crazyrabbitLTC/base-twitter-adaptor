@@ -29,6 +29,7 @@ export class TwitterService {
       ...config,
       threadHistoryLimit: config.threadHistoryLimit ?? 50,
       pollIntervalMs: config.pollIntervalMs ?? 60000, // Default to 1 minute
+      logLevel: config.logLevel ?? 'info', // Default to 'info' if not specified
     };
     this.threads = new Map();
     this.emitter = new EventEmitter();
@@ -37,9 +38,10 @@ export class TwitterService {
     this.on = this.emitter.on.bind(this.emitter);
     this.emit = this.emitter.emit.bind(this.emitter);
 
-    // Initialize logger with timestamp
+    // Initialize logger with timestamp and configured level
     this.logger = winston.createLogger({
-      level: 'info',
+      level: this.config.logLevel || 'info',
+      silent: this.config.logLevel === 'silent',
       format: winston.format.combine(
         winston.format.timestamp(),
         winston.format.printf((info: winston.Logform.TransformableInfo) => {
@@ -70,6 +72,9 @@ export class TwitterService {
         appSecret: config.apiSecret,
       });
     }
+
+    //set initial lastMentionId based on the config
+    this.lastMentionId = config.sinceId;
   }
 
   /**
@@ -122,6 +127,8 @@ export class TwitterService {
    */
   private async pollForMentions() {
     try {
+
+      this.logger.debug('Polling for mentions');
       if (!this.currentUsername) {
         const meResponse = await this.twitterClient.v2.get('users/me');
         this.currentUsername = meResponse.data.username;
@@ -130,49 +137,101 @@ export class TwitterService {
 
       const query = `@${this.currentUsername}`;
       const searchParameters: Partial<Tweetv2SearchParams> = {
-        'tweet.fields': ['conversation_id', 'author_id', 'created_at'],
-        since_id: this.lastMentionId,
+        'tweet.fields': ['conversation_id', 'author_id', 'created_at', 'text', 'id'],
         max_results: 100,
       };
 
+      // Only add since_id if it's a valid value
+      if (this.lastMentionId) {
+        searchParameters.since_id = this.lastMentionId;
+      } else if (this.config.sinceId && this.config.sinceId !== '0') {
+        searchParameters.since_id = this.config.sinceId;
+      } else {
+        this.logger.debug('No sinceId set, using default')
+      }
+
+      this.logger.debug('Searching with parameters:', { query, searchParameters });
+
       const searchResponse = await this.twitterClient.v2.search(query, searchParameters);
 
-      if (!searchResponse?.data) return;
+      this.logger.debug('Raw Twitter API response:', {
+        hasData: !!searchResponse?.data,
+        responseData: JSON.stringify(searchResponse?.data),
+        meta: searchResponse?.meta,
+        includes: searchResponse?.includes,
+        fullResponse: JSON.stringify(searchResponse),
+      });
 
-      const tweets = Array.isArray(searchResponse.data) ? searchResponse.data : [searchResponse.data];
-      if (tweets.length > 0) {
-        this.lastMentionId = tweets[0].id; // Update last mention ID
+      // Early return if no data
+      if (!searchResponse?.data?.data) {
+        this.logger.debug('No tweets found');
+        return;
+      }
 
-        // Process mentions in chronological order (oldest first)
-        for (const mention of [...tweets].reverse()) {
-          // Skip tweets with missing required fields
-          if (!mention.conversation_id || !mention.author_id || !mention.created_at) {
-            this.logger.warn('Incomplete tweet data', { mention });
-            continue;
-          }
+      // Handle the Twitter API v2 response structure - data is nested inside data
+      const tweets = searchResponse.data.data;
 
-          // Skip tweets from the authenticated user
-          if (mention.author_id === this.currentUserId) {
-            this.logger.debug('Skipping own tweet', { tweetId: mention.id });
-            continue;
-          }
+      this.logger.debug('Extracted tweets:', { tweets: JSON.stringify(tweets) });
 
-          // At this point TypeScript knows these fields are defined
-          const tweetData: TweetV2 = {
-            text: mention.text,
-            id: mention.id,
-            conversation_id: mention.conversation_id,
-            author_id: mention.author_id,
-            created_at: mention.created_at,
-            edit_history_tweet_ids: [mention.id],
-          };
+      if (!Array.isArray(tweets)) {
+        this.logger.warn('Unexpected response format', { tweets });
+        return;
+      }
 
-          await this.handleMention({
-            tweet: tweetData,
-          });
+      if (tweets.length === 0) {
+        this.logger.debug('No tweets found');
+        return;
+      }
+
+      // Update last mention ID with the most recent tweet
+      if (tweets[0]) {
+        this.lastMentionId = tweets[0].id;
+        this.logger.debug(`Found ${tweets.length} tweets, lastMentionId is now: ${this.lastMentionId}`);
+      } else {
+        this.logger.debug('No tweets found, lastMentionId remains:', this.lastMentionId);
+      }
+
+
+      // Process mentions in chronological order (oldest first)
+      const tweetsToProcess = [...tweets].reverse();
+      for (const tweet of tweetsToProcess) {
+        this.logger.debug('Raw tweet data:', { tweet: JSON.stringify(tweet) });
+
+        // Skip tweets from the authenticated user unless configured to include them
+        if (tweet.author_id === this.currentUserId && !this.config.includeOwnTweets) {
+          this.logger.debug('Skipping own tweet', { tweetId: tweet.id });
+          continue;
         }
+
+        // Create tweet data with all available fields
+        const tweetData: TweetV2 = {
+          text: tweet.text || '',
+          id: tweet.id,
+          conversation_id: tweet.conversation_id || tweet.id,
+          author_id: tweet.author_id || '',
+          created_at: tweet.created_at || new Date().toISOString(),
+          edit_history_tweet_ids: [tweet.id],
+        };
+
+        this.logger.debug('Processing tweet:', {
+          original: JSON.stringify(tweet),
+          processed: tweetData,
+        });
+
+        await this.handleMention({
+          tweet: tweetData,
+        });
       }
     } catch (error: any) {
+      // Enhanced error logging
+      this.logger.error('Error polling for mentions', {
+        error: error,
+        errorMessage: error.message,
+        errorStack: error.stack,
+        errorData: error.data,
+        errorResponse: error.response,
+      });
+
       if (error?.data?.status === 429) {
         const rateLimitEvent: RateLimitEvent = {
           tweetId: '',
@@ -182,7 +241,6 @@ export class TwitterService {
         this.logger.warn('Rate limited when polling for mentions', { error });
         this.emit('rateLimitWarning', rateLimitEvent);
       } else {
-        this.logger.error('Error polling for mentions', { error });
         this.emit('pollError', { error });
       }
     }
@@ -195,26 +253,20 @@ export class TwitterService {
     this.logger.info('Processing mention', mention);
 
     const tweet = mention.tweet;
-    if (!tweet) {
-      this.logger.warn('No tweet data in mention', { mention });
+    if (!tweet || !tweet.id) {
+      this.logger.warn('Invalid tweet data', { mention });
       return;
     }
 
-    // Ensure required fields are present
-    if (!tweet.text || !tweet.id || !tweet.conversation_id || !tweet.author_id) {
-      this.logger.warn('Missing required tweet fields', { tweet });
-      return;
-    }
-
-    this.logger.info('Valid mention', {
+    this.logger.info('Processing mention', {
       text: tweet.text,
       id: tweet.id,
     });
 
     const mentionEvent: MentionEvent = {
-      message: tweet.text,
-      threadId: tweet.conversation_id,
-      userId: tweet.author_id,
+      message: tweet.text || '',
+      threadId: tweet.conversation_id || tweet.id,
+      userId: tweet.author_id || 'unknown',
       tweetId: tweet.id,
     };
 
@@ -345,5 +397,26 @@ export class TwitterService {
       }
       throw error;
     }
+  }
+
+  private isValidTweet(tweet: any): tweet is TweetV2 {
+    const requiredFields = ['text', 'id', 'conversation_id', 'author_id', 'created_at'];
+    const hasAllFields = requiredFields.every(field => tweet[field] !== undefined && tweet[field] !== null);
+
+    if (!hasAllFields) {
+      this.logger.debug('Tweet missing required fields', {
+        tweet,
+        tweetId: tweet.id,
+        missingFields: requiredFields.filter(field => !tweet[field]),
+        availableFields: Object.keys(tweet),
+      });
+    } else {
+      this.logger.debug('Tweet passed validation', {
+        tweetId: tweet.id,
+        fields: requiredFields.map(field => `${field}: ${tweet[field]}`),
+      });
+    }
+
+    return hasAllFields;
   }
 }

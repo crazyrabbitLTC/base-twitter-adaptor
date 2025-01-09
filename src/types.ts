@@ -11,6 +11,10 @@ export interface TwitterServiceConfig {
   bearerToken?: string;
   pollIntervalMs?: number;
   threadHistoryLimit?: number;
+  sinceId?: string;
+  skipInitialPoll?: boolean;
+  includeOwnTweets?: boolean;
+  logLevel?: 'error' | 'warn' | 'info' | 'debug' | 'silent';
 }
 
 /**

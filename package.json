@@ -17,7 +17,8 @@
     "clean": "rimraf dist",
     "prebuild": "npm run clean",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:tweet": "ts-node src/testTweet.ts"
   },
   "keywords": [
     "twitter",
@@ -39,11 +40,13 @@
   },
   "homepage": "https://github.com/dennisonbertram/base-twitter-adaptor#readme",
   "dependencies": {
+    "express": "^4.21.2",
     "twitter-api-v2": "^1.15.1",
     "winston": "^3.17.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/express": "^5.0.0",
     "@types/jest": "^29.5.11",
     "@types/node": "^20.10.5",
     "@typescript-eslint/eslint-plugin": "^8.19.1",
