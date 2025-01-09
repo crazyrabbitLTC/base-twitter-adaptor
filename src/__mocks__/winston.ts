@@ -47,4 +47,4 @@ const mockWinston: MockWinston = {
   },
 };
 
-export = mockWinston; 
+export = mockWinston;

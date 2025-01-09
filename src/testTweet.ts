@@ -17,11 +17,9 @@ async function retryWithBackoff<T>(
     } catch (error: any) {
       if (error?.data?.status === 429 && retries < maxRetries) {
         const resetTime = error.headers?.['x-rate-limit-reset'];
-        const waitTime = resetTime 
-          ? (Number(resetTime) * 1000 - Date.now() + 5000)
-          : baseDelay * Math.pow(2, retries);
-        
-        console.log(`Rate limited. Waiting ${Math.ceil(waitTime/1000)} seconds before retry...`);
+        const waitTime = resetTime ? Number(resetTime) * 1000 - Date.now() + 5000 : baseDelay * Math.pow(2, retries);
+
+        console.log(`Rate limited. Waiting ${Math.ceil(waitTime / 1000)} seconds before retry...`);
         await delay(waitTime);
         retries++;
       } else {
@@ -42,21 +40,19 @@ async function testTweet() {
   try {
     // Create a test tweet
     console.log('1. Creating test tweet');
-    const tweet = await retryWithBackoff(() => 
-      client.v2.tweet(`Test tweet ${Date.now()}`)
-    );
+    const tweet = await retryWithBackoff(() => client.v2.tweet(`Test tweet ${Date.now()}`));
     console.log('✅ Tweet created successfully:', tweet);
 
     await delay(5000);
 
     // Create a reply to the tweet
     console.log('\n2. Creating reply to test tweet');
-    const reply = await retryWithBackoff(() => 
+    const reply = await retryWithBackoff(() =>
       client.v2.tweet({
         text: `Test reply ${Date.now()}`,
         reply: {
-          in_reply_to_tweet_id: tweet.data.id
-        }
+          in_reply_to_tweet_id: tweet.data.id,
+        },
       })
     );
     console.log('✅ Reply created successfully:', reply);
@@ -65,26 +61,21 @@ async function testTweet() {
 
     // Delete both tweets
     console.log('\n3. Cleaning up tweets');
-    const deleteTweet = await retryWithBackoff(() => 
-      client.v2.deleteTweet(tweet.data.id)
-    );
+    const deleteTweet = await retryWithBackoff(() => client.v2.deleteTweet(tweet.data.id));
     console.log('✅ Original tweet deleted:', deleteTweet);
 
     await delay(2000);
 
-    const deleteReply = await retryWithBackoff(() => 
-      client.v2.deleteTweet(reply.data.id)
-    );
+    const deleteReply = await retryWithBackoff(() => client.v2.deleteTweet(reply.data.id));
     console.log('✅ Reply deleted:', deleteReply);
-
   } catch (error: any) {
     console.error('Error during tweet testing:', {
       status: error.response?.status,
       statusText: error.response?.statusText,
       data: error.response?.data,
-      headers: error.response?.headers
+      headers: error.response?.headers,
     });
   }
 }
 
-testTweet(); 
+testTweet();

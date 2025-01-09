@@ -28,20 +28,24 @@ const createMockTwitterApiV2 = (): MockTwitterApiV2 => ({
       data: {
         id: 'test-tweet-id',
         text: tweetText,
-        edit_history_tweet_ids: ['test-tweet-id']
-      }
+        edit_history_tweet_ids: ['test-tweet-id'],
+      },
     });
   }),
   userTimeline: jest.fn().mockImplementation(() => {
     return Promise.resolve({
-      tweets: [{
-        id: 'test-reply-id',
-        text: 'Test reply',
-        referenced_tweets: [{
-          type: 'replied_to',
-          id: 'test-tweet-id'
-        }]
-      }]
+      tweets: [
+        {
+          id: 'test-reply-id',
+          text: 'Test reply',
+          referenced_tweets: [
+            {
+              type: 'replied_to',
+              id: 'test-tweet-id',
+            },
+          ],
+        },
+      ],
     });
   }),
   deleteTweet: jest.fn(),
@@ -54,24 +58,26 @@ const createMockTwitterApiV2 = (): MockTwitterApiV2 => ({
       return Promise.resolve({
         data: {
           id: 'test-user-id',
-          username: 'test-username'
-        }
+          username: 'test-username',
+        },
       });
     }
     return Promise.reject(new Error(`Unhandled endpoint: ${endpoint}`));
   }),
   search: jest.fn().mockImplementation((query: string, params: any) => {
     return Promise.resolve({
-      data: [{
-        id: 'test-tweet-id',
-        text: query,
-        conversation_id: 'test-conversation-id',
-        author_id: 'test-author-id',
-        created_at: new Date().toISOString(),
-        edit_history_tweet_ids: ['test-tweet-id']
-      }]
+      data: [
+        {
+          id: 'test-tweet-id',
+          text: query,
+          conversation_id: 'test-conversation-id',
+          author_id: 'test-author-id',
+          created_at: new Date().toISOString(),
+          edit_history_tweet_ids: ['test-tweet-id'],
+        },
+      ],
     });
-  })
+  }),
 });
 
 // Create mock Twitter API factory
@@ -88,4 +94,4 @@ const createMockTwitterApi = () => {
   return MockTwitterApi as unknown as jest.MockedClass<typeof RealTwitterApi>;
 };
 
-export const TwitterApi = createMockTwitterApi(); 
+export const TwitterApi = createMockTwitterApi();

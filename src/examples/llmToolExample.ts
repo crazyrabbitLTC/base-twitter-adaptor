@@ -1,5 +1,5 @@
-import { LLMToolAdapter } from "../LLMToolAdapter";
-import { TwitterServiceConfig } from "../types";
+import { LLMToolAdapter } from '../LLMToolAdapter';
+import { TwitterServiceConfig } from '../types';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -14,22 +14,22 @@ const twitterConfig: TwitterServiceConfig = {
 
 const llmToolAdapter = new LLMToolAdapter({ twitterConfig });
 
-llmToolAdapter.on('newTwitterMessage', (response) => {
-  console.log("New twitter message for LLM:", response);
+llmToolAdapter.on('newTwitterMessage', response => {
+  console.log('New twitter message for LLM:', response);
   // Send to your LLM
 });
 
-llmToolAdapter.on('rateLimitWarning', (rateLimit) => {
+llmToolAdapter.on('rateLimitWarning', rateLimit => {
   console.warn('Rate limit warning:', rateLimit);
   // Handle rate limit
 });
 
-llmToolAdapter.on('pollError', (error) => {
+llmToolAdapter.on('pollError', error => {
   console.error('Poll Error:', error);
   // Handle poll error
 });
 
-llmToolAdapter.on('tweetError', (error) => {
+llmToolAdapter.on('tweetError', error => {
   console.error('Tweet Error:', error);
   // Handle tweet error
 });
@@ -42,15 +42,15 @@ async function main() {
     const profile = await llmToolAdapter.getMyProfile();
     console.log('My profile:', profile);
 
-    const post = await llmToolAdapter.postTweet("Hello from the LLM");
-    console.log("Post response:", post);
+    const post = await llmToolAdapter.postTweet('Hello from the LLM');
+    console.log('Post response:', post);
 
-    const search = await llmToolAdapter.searchTweets("test");
-    console.log("Search response:", search);
+    const search = await llmToolAdapter.searchTweets('test');
+    console.log('Search response:', search);
 
     // To reply the LLM needs to provide the tweet id:
     if (search.success && search.data.data && search.data.data[0]?.id) {
-      const reply = await llmToolAdapter.replyToTweet(search.data.data[0].id, "This is a test reply");
+      const reply = await llmToolAdapter.replyToTweet(search.data.data[0].id, 'This is a test reply');
       console.log('Reply Response:', reply);
     }
   } catch (error) {
@@ -65,4 +65,4 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-main(); 
+main();

@@ -82,13 +82,13 @@ const createMockApp = (server: MockServer): MockApp => ({
 const createMockExpress = (): MockExpress => {
   const mockServer = createMockServer();
   const mockApp = createMockApp(mockServer);
-  
+
   const mockExpress = jest.fn(() => mockApp) as unknown as MockExpress;
   mockExpress.json = jest.fn(() => (req: Request, res: Response, next: () => void) => next());
   mockExpress.urlencoded = jest.fn(() => (req: Request, res: Response, next: () => void) => next());
   mockExpress.static = jest.fn(() => (req: Request, res: Response, next: () => void) => next());
-  
+
   return mockExpress;
 };
 
-export default createMockExpress(); 
+export default createMockExpress();

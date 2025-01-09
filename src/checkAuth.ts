@@ -13,12 +13,12 @@ export async function checkAuth() {
     });
 
     const me = await client.v2.get('users/me');
-    console.log("Successfully authenticated as:", me.data);
+    console.log('Successfully authenticated as:', me.data);
     return true;
   } catch (error) {
-    console.error("Authentication failed:", error);
+    console.error('Authentication failed:', error);
     return false;
   }
 }
 
-checkAuth(); 
+checkAuth();

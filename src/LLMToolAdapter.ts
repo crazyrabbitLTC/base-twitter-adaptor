@@ -39,8 +39,8 @@ export class LLMToolAdapter {
           messageId: mention.tweetId,
           threadId: mention.threadId,
           userId: mention.userId,
-          content: mention.message
-        }
+          content: mention.message,
+        },
       });
     });
 
@@ -48,7 +48,7 @@ export class LLMToolAdapter {
       this.emit('rateLimitWarning', {
         success: false,
         error: warning.error,
-        message: 'Rate limit reached'
+        message: 'Rate limit reached',
       });
     });
 
@@ -56,7 +56,7 @@ export class LLMToolAdapter {
       this.emit('error', {
         success: false,
         error,
-        message: 'Error polling for mentions'
+        message: 'Error polling for mentions',
       });
     });
 
@@ -64,7 +64,7 @@ export class LLMToolAdapter {
       this.emit('error', {
         success: false,
         error,
-        message: 'Error sending tweet'
+        message: 'Error sending tweet',
       });
     });
   }
@@ -77,13 +77,13 @@ export class LLMToolAdapter {
       await this.twitterService.start();
       return {
         success: true,
-        message: 'Twitter service started successfully'
+        message: 'Twitter service started successfully',
       };
     } catch (error) {
       return {
         success: false,
         error,
-        message: 'Failed to start Twitter service'
+        message: 'Failed to start Twitter service',
       };
     }
   }
@@ -96,13 +96,13 @@ export class LLMToolAdapter {
       await this.twitterService.stop();
       return {
         success: true,
-        message: 'Twitter service stopped successfully'
+        message: 'Twitter service stopped successfully',
       };
     } catch (error) {
       return {
         success: false,
         error,
-        message: 'Failed to stop Twitter service'
+        message: 'Failed to stop Twitter service',
       };
     }
   }
@@ -116,13 +116,13 @@ export class LLMToolAdapter {
       return {
         success: true,
         message: 'Tweet posted successfully',
-        data: tweet
+        data: tweet,
       };
     } catch (error) {
       return {
         success: false,
         error,
-        message: 'Failed to post tweet'
+        message: 'Failed to post tweet',
       };
     }
   }
@@ -136,13 +136,13 @@ export class LLMToolAdapter {
       return {
         success: true,
         message: 'Reply posted successfully',
-        data: reply
+        data: reply,
       };
     } catch (error) {
       return {
         success: false,
         error,
-        message: 'Failed to post reply'
+        message: 'Failed to post reply',
       };
     }
   }
@@ -155,13 +155,13 @@ export class LLMToolAdapter {
       const profile = await this.twitterService.getMyProfile();
       return {
         success: true,
-        data: profile
+        data: profile,
       };
     } catch (error) {
       return {
         success: false,
         error,
-        message: 'Failed to get profile'
+        message: 'Failed to get profile',
       };
     }
   }
@@ -174,14 +174,14 @@ export class LLMToolAdapter {
       const tweets = await this.twitterService.searchTweets(query);
       return {
         success: true,
-        data: tweets
+        data: tweets,
       };
     } catch (error) {
       return {
         success: false,
         error,
-        message: 'Failed to search tweets'
+        message: 'Failed to search tweets',
       };
     }
   }
-} 
+}

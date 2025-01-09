@@ -36,20 +36,20 @@ const config: TwitterServiceConfig = {
   accessToken: process.env.X_ACCESS_TOKEN,
   accessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET,
   pollIntervalMs: 60000, // Poll every minute
-  threadHistoryLimit: 50  // Keep last 50 messages in thread history
+  threadHistoryLimit: 50, // Keep last 50 messages in thread history
 };
 
 const twitterService = new TwitterService(config);
 
 // Handle new mentions from polling
-twitterService.on('newMention', async (mentionEvent) => {
+twitterService.on('newMention', async mentionEvent => {
   console.log('New mention:', mentionEvent);
   // Handle the mention event
-  await twitterService.replyToTweet(mentionEvent.tweetId, "Thanks for the mention!");
+  await twitterService.replyToTweet(mentionEvent.tweetId, 'Thanks for the mention!');
 });
 
 // Handle rate limits
-twitterService.on('rateLimitWarning', (warning) => {
+twitterService.on('rateLimitWarning', warning => {
   console.warn('Rate limit warning:', warning);
 });
 
@@ -67,18 +67,18 @@ const twitterConfig = {
   apiSecret: process.env.X_API_SECRET!,
   accessToken: process.env.X_ACCESS_TOKEN,
   accessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET,
-  pollIntervalMs: 10000  // Poll every 10 seconds
+  pollIntervalMs: 10000, // Poll every 10 seconds
 };
 
 const llmToolAdapter = new LLMToolAdapter({ twitterConfig });
 
 // Handle Twitter events from polling
-llmToolAdapter.on('newTwitterMessage', (response) => {
-  console.log("New twitter message for LLM:", response);
+llmToolAdapter.on('newTwitterMessage', response => {
+  console.log('New twitter message for LLM:', response);
   // Send to your LLM
 });
 
-llmToolAdapter.on('rateLimitWarning', (rateLimit) => {
+llmToolAdapter.on('rateLimitWarning', rateLimit => {
   console.warn('Rate limit warning:', rateLimit);
 });
 
@@ -87,9 +87,9 @@ await llmToolAdapter.start();
 
 // Example LLM actions
 const profile = await llmToolAdapter.getMyProfile();
-const tweet = await llmToolAdapter.postTweet("Hello from the LLM!");
-const search = await llmToolAdapter.searchTweets("ai");
-const reply = await llmToolAdapter.replyToTweet(tweetId, "Thanks for the mention!");
+const tweet = await llmToolAdapter.postTweet('Hello from the LLM!');
+const search = await llmToolAdapter.searchTweets('ai');
+const reply = await llmToolAdapter.replyToTweet(tweetId, 'Thanks for the mention!');
 ```
 
 ## Features
@@ -106,6 +106,7 @@ const reply = await llmToolAdapter.replyToTweet(tweetId, "Thanks for the mention
 ## Types
 
 ### TwitterServiceConfig
+
 ```typescript
 interface TwitterServiceConfig {
   apiKey: string;
@@ -113,12 +114,13 @@ interface TwitterServiceConfig {
   accessToken?: string;
   accessTokenSecret?: string;
   bearerToken?: string;
-  pollIntervalMs?: number;     // Default: 60000 (1 minute)
-  threadHistoryLimit?: number;  // Default: 50 messages
+  pollIntervalMs?: number; // Default: 60000 (1 minute)
+  threadHistoryLimit?: number; // Default: 50 messages
 }
 ```
 
 ### MentionEvent
+
 ```typescript
 interface MentionEvent {
   threadId: string;
@@ -129,6 +131,7 @@ interface MentionEvent {
 ```
 
 ### LLMResponse
+
 ```typescript
 interface LLMResponse {
   success: boolean;
@@ -157,4 +160,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-MIT 
+MIT

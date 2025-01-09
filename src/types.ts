@@ -59,19 +59,25 @@ export const tweetSchema = z.object({
   author_id: z.string(),
   created_at: z.string().optional(),
   in_reply_to_user_id: z.string().optional(),
-  referenced_tweets: z.array(
-    z.object({
-      type: z.enum(['replied_to', 'quoted', 'retweeted']),
-      id: z.string(),
-    })
-  ).optional(),
-  entities: z.object({
-    mentions: z.array(
+  referenced_tweets: z
+    .array(
       z.object({
-        username: z.string(),
+        type: z.enum(['replied_to', 'quoted', 'retweeted']),
         id: z.string(),
       })
-    ).optional(),
-  }).optional(),
+    )
+    .optional(),
+  entities: z
+    .object({
+      mentions: z
+        .array(
+          z.object({
+            username: z.string(),
+            id: z.string(),
+          })
+        )
+        .optional(),
+    })
+    .optional(),
   edit_history_tweet_ids: z.array(z.string()).optional(),
-}); 
+});

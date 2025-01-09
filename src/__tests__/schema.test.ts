@@ -26,9 +26,7 @@ describe('Tweet Schema', () => {
       id: '123456789',
       conversation_id: 'conv123',
       author_id: 'user123',
-      referenced_tweets: [
-        { type: 'replied_to', id: '987654321' },
-      ],
+      referenced_tweets: [{ type: 'replied_to', id: '987654321' }],
       entities: {
         mentions: [{ username: 'test', id: 'user456' }],
       },
@@ -69,4 +67,4 @@ describe('Tweet Schema', () => {
       expect(result.data.edit_history_tweet_ids).toHaveLength(2);
     }
   });
-}); 
+});

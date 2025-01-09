@@ -18,7 +18,7 @@ describe('TwitterService', () => {
   let mockApp: MockApp;
   let mockServer: MockServer;
   let mockTwitterApiV2: MockTwitterApiV2;
-  
+
   const mockConfig: TwitterServiceConfig = {
     apiKey: 'test-key',
     apiSecret: 'test-secret',
@@ -28,7 +28,7 @@ describe('TwitterService', () => {
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
-    
+
     // Setup Twitter API mock with full interface implementation
     mockTwitterApiV2 = {
       reply: jest.fn(),
@@ -44,36 +44,36 @@ describe('TwitterService', () => {
           return Promise.resolve({
             data: {
               id: 'test-user-id',
-              username: 'test-username'
-            }
+              username: 'test-username',
+            },
           });
         }
         return Promise.reject(new Error(`Unhandled endpoint: ${endpoint}`));
       }),
-      search: jest.fn()
+      search: jest.fn(),
     };
-    
+
     const mockTwitterApi = {
       v2: mockTwitterApiV2,
       readWrite: {},
       readOnly: {},
     } as unknown as TwitterApi;
-    
+
     MockedTwitterApi.mockImplementation(() => mockTwitterApi);
-    
+
     service = new TwitterService(mockConfig);
   });
 
   describe('event handling', () => {
-    it('should emit newMention event when valid mention is received', (done) => {
+    it('should emit newMention event when valid mention is received', done => {
       const validMention = {
         tweet: {
           text: 'Test mention',
           id: 'test-tweet-id',
           conversation_id: 'test-conversation-id',
           author_id: 'test-author-id',
-          edit_history_tweet_ids: ['test-tweet-id']
-        }
+          edit_history_tweet_ids: ['test-tweet-id'],
+        },
       };
 
       service.on('newMention', (event: MentionEvent) => {
@@ -91,7 +91,7 @@ describe('TwitterService', () => {
 
     it('should not emit newMention event for invalid mention', () => {
       const invalidMention = {
-        not_a_tweet: {}
+        not_a_tweet: {},
       } as any;
 
       const mockEmit = jest.spyOn(service, 'emit');
@@ -108,8 +108,8 @@ describe('TwitterService', () => {
           conversation_id: 'test-conversation-id',
           author_id: 'test-author-id',
           referenced_tweets: [{ type: 'replied_to' as const, id: 'test-ref-id' }],
-          edit_history_tweet_ids: ['test-tweet-id']
-        }
+          edit_history_tweet_ids: ['test-tweet-id'],
+        },
       };
 
       const mockEmit = jest.spyOn(service, 'emit');
@@ -118,4 +118,4 @@ describe('TwitterService', () => {
       expect(mockEmit).toHaveBeenCalledWith('newMention', expect.any(Object));
     });
   });
-}); 
+});

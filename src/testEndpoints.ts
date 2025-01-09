@@ -17,11 +17,9 @@ async function retryWithBackoff<T>(
     } catch (error: any) {
       if (error?.data?.status === 429 && retries < maxRetries) {
         const resetTime = error.headers?.['x-rate-limit-reset'];
-        const waitTime = resetTime 
-          ? (Number(resetTime) * 1000 - Date.now() + 5000)
-          : baseDelay * Math.pow(2, retries);
-        
-        console.log(`Rate limited. Waiting ${Math.ceil(waitTime/1000)} seconds before retry...`);
+        const waitTime = resetTime ? Number(resetTime) * 1000 - Date.now() + 5000 : baseDelay * Math.pow(2, retries);
+
+        console.log(`Rate limited. Waiting ${Math.ceil(waitTime / 1000)} seconds before retry...`);
         await delay(waitTime);
         retries++;
       } else {
@@ -54,9 +52,7 @@ async function runEndpointTests() {
 
     // 2. Test tweet creation
     console.log('2. Testing tweet creation');
-    const tweet = await retryWithBackoff(() => 
-      client.v2.tweet(`Test tweet for endpoint verification ${Date.now()}`)
-    );
+    const tweet = await retryWithBackoff(() => client.v2.tweet(`Test tweet for endpoint verification ${Date.now()}`));
     testTweetId = tweet.data.id;
     console.log('✅ Successfully created tweet:', tweet);
     console.log();
@@ -66,12 +62,12 @@ async function runEndpointTests() {
     // 3. Test reply to tweet
     console.log('3. Testing reply to tweet');
     try {
-      const reply = await retryWithBackoff(() => 
+      const reply = await retryWithBackoff(() =>
         client.v2.tweet({
           text: `Test reply for endpoint verification ${Date.now()}`,
           reply: {
-            in_reply_to_tweet_id: testTweetId!
-          }
+            in_reply_to_tweet_id: testTweetId!,
+          },
         })
       );
       console.log('✅ Successfully replied to tweet:', reply);
@@ -79,7 +75,7 @@ async function runEndpointTests() {
       console.error('Error with tweets:', {
         status: error.response?.status,
         statusText: error.response?.statusText,
-        data: error.response?.data
+        data: error.response?.data,
       });
       console.log('❌ Failed to reply to tweet');
     }
@@ -89,20 +85,17 @@ async function runEndpointTests() {
     // 4. Clean up tweets
     console.log('\n4. Cleaning up tweets');
     if (testTweetId) {
-      const deleteResponse = await retryWithBackoff(() => 
-        client.v2.deleteTweet(testTweetId!)
-      );
+      const deleteResponse = await retryWithBackoff(() => client.v2.deleteTweet(testTweetId!));
       console.log('✅ Successfully deleted tweet:', deleteResponse);
     }
-
   } catch (error: any) {
     console.error('Error during endpoint testing:', {
       status: error.response?.status,
       statusText: error.response?.statusText,
       data: error.response?.data,
-      headers: error.response?.headers
+      headers: error.response?.headers,
     });
   }
 }
 
-runEndpointTests(); 
+runEndpointTests();

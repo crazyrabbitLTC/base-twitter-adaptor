@@ -21,11 +21,8 @@ console.log('X_ACCESS_TOKEN exists:', !!process.env.X_ACCESS_TOKEN);
 console.log('X_ACCESS_TOKEN_SECRET exists:', !!process.env.X_ACCESS_TOKEN_SECRET);
 
 // Only run these tests if we have the required environment variables
-const hasCredentials = 
-  process.env.X_API_KEY &&
-  process.env.X_API_SECRET &&
-  process.env.X_ACCESS_TOKEN &&
-  process.env.X_ACCESS_TOKEN_SECRET;
+const hasCredentials =
+  process.env.X_API_KEY && process.env.X_API_SECRET && process.env.X_ACCESS_TOKEN && process.env.X_ACCESS_TOKEN_SECRET;
 
 console.log('hasCredentials:', hasCredentials);
 
@@ -42,14 +39,14 @@ describe('TwitterService Live Tests', () => {
         apiSecret: process.env.X_API_SECRET || '',
         accessToken: process.env.X_ACCESS_TOKEN,
         accessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET,
-        pollIntervalMs: 1000 // Use shorter polling interval for tests
+        pollIntervalMs: 1000, // Use shorter polling interval for tests
       };
 
       twitterClient = new TwitterApi({
         appKey: config.apiKey,
         appSecret: config.apiSecret,
         accessToken: config.accessToken!,
-        accessSecret: config.accessTokenSecret!
+        accessSecret: config.accessTokenSecret!,
       });
 
       console.log('Client created:', !!twitterClient);
@@ -57,7 +54,12 @@ describe('TwitterService Live Tests', () => {
       service = new TwitterService(config);
       console.log('Service created:', !!service);
     } else {
-      console.log('Skipping initialization, shouldRunLiveTests:', shouldRunLiveTests, 'hasCredentials:', hasCredentials);
+      console.log(
+        'Skipping initialization, shouldRunLiveTests:',
+        shouldRunLiveTests,
+        'hasCredentials:',
+        hasCredentials
+      );
     }
   });
 
@@ -81,7 +83,7 @@ describe('TwitterService Live Tests', () => {
         message: error?.message,
         code: error?.code,
         data: error?.data,
-        response: error?.response
+        response: error?.response,
       });
       throw error;
     }
@@ -115,7 +117,7 @@ describe('TwitterService Live Tests', () => {
             message: error?.message,
             code: error?.code,
             data: error?.data,
-            response: error?.response
+            response: error?.response,
           });
           throw error;
         }
@@ -125,7 +127,7 @@ describe('TwitterService Live Tests', () => {
         it('should correctly process a new mention and respond to it', async () => {
           await service.start();
           console.log('Service started');
-          
+
           let testTweetId: string | undefined;
           try {
             // Create a mention tweet
@@ -133,7 +135,7 @@ describe('TwitterService Live Tests', () => {
             testTweetId = await postTweet(`Test mention @${me.data.username} ${Date.now()}`);
             console.log('Created test tweet with ID:', testTweetId);
             expect(testTweetId).toBeDefined();
-            
+
             // Wait for the mention to be processed
             return new Promise<void>((resolve, reject) => {
               // Set a timeout to fail the test if no mention is received
@@ -147,27 +149,27 @@ describe('TwitterService Live Tests', () => {
                   console.log('Received mention event:', mention);
                   expect(mention).toBeDefined();
                   expect(mention.tweetId).toBe(testTweetId);
-                  
+
                   // Test replying to the tweet
                   console.log('Attempting to reply to tweet');
                   await service['replyToTweet'](mention.tweetId, 'Test reply');
-                  
+
                   // Verify the reply
                   console.log('Verifying reply');
                   const timeline = await twitterClient.v2.userTimeline(mention.userId, {
                     expansions: ['referenced_tweets.id'] as TTweetv2Expansion[],
                   });
-                  
+
                   const reply = timeline.tweets.find((t: TweetV2) =>
-                    t.referenced_tweets?.some((ref: ReferencedTweetV2) =>
-                      ref.type === 'replied_to' && ref.id === testTweetId
+                    t.referenced_tweets?.some(
+                      (ref: ReferencedTweetV2) => ref.type === 'replied_to' && ref.id === testTweetId
                     )
                   );
-                  
+
                   console.log('Found reply:', reply);
                   expect(reply).toBeDefined();
                   expect(reply?.text).toBe('Test reply');
-                  
+
                   clearTimeout(timeout);
                   resolve();
                 } catch (error) {
@@ -186,7 +188,7 @@ describe('TwitterService Live Tests', () => {
               message: error?.message,
               code: error?.code,
               data: error?.data,
-              response: error?.response
+              response: error?.response,
             });
             throw error;
           } finally {
@@ -209,7 +211,7 @@ describe('TwitterService Live Tests', () => {
             for (let i = 0; i < 5; i++) {
               try {
                 const response = await twitterClient.v2.tweet({
-                  text: `Rate limit test tweet ${i}`
+                  text: `Rate limit test tweet ${i}`,
                 });
                 console.log('Tweet response:', JSON.stringify(response, null, 2));
                 if (response?.data?.id) {
@@ -230,7 +232,7 @@ describe('TwitterService Live Tests', () => {
                 throw error;
               }
             }
-            
+
             expect(rateLimitWarningReceived).toBe(true);
           } finally {
             // Cleanup
@@ -246,4 +248,4 @@ describe('TwitterService Live Tests', () => {
       });
     });
   });
-}); 
+});
