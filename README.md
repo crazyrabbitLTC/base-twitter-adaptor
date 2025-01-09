@@ -8,26 +8,38 @@ A type-safe Twitter API adapter with built-in LLM support for building AI-powere
 npm install base-twitter-adaptor
 # or
 yarn add base-twitter-adaptor
-```
+content_copy
+download
+Use code with caution.
+Markdown
+Configuration
 
-## Configuration
+Create a .env file with your Twitter API credentials:
 
-Create a `.env` file with your Twitter API credentials:
-
-```env
 # X (Twitter) API Credentials
 X_API_KEY=your_api_key
 X_API_SECRET=your_api_secret
-X_BEARER_TOKEN=your_bearer_token
 X_ACCESS_TOKEN=your_access_token
 X_ACCESS_TOKEN_SECRET=your_access_token_secret
-```
+X_BEARER_TOKEN=your_bearer_token
+content_copy
+download
+Use code with caution.
+Env
+Architecture
 
-## Usage
+This library uses an event-driven architecture based on Node.js's EventEmitter. Both the TwitterService and LLMToolAdapter emit events that you can listen to for asynchronous communication. This approach allows for:
 
-### Basic Twitter Service with Polling
+Real-time handling of mentions and responses
 
-```typescript
+Decoupled error handling
+
+Efficient rate limit management
+
+Scalable message processing
+
+Usage
+Basic Twitter Service with Polling
 import { TwitterService, TwitterServiceConfig } from 'base-twitter-adaptor';
 
 const config: TwitterServiceConfig = {
@@ -35,17 +47,16 @@ const config: TwitterServiceConfig = {
   apiSecret: process.env.X_API_SECRET!,
   accessToken: process.env.X_ACCESS_TOKEN,
   accessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET,
-  pollIntervalMs: 60000, // Poll every minute
-  threadHistoryLimit: 50, // Keep last 50 messages in thread history
-  includeOwnTweets: true, // Include tweets from the authenticated user
-  logLevel: 'info', // Set logging level
-  sinceId: '1234567890', // Optional: Start polling from a specific tweet
+  pollIntervalMs: 60000, // Poll every minute (default)
+  threadHistoryLimit: 50, // Keep last 50 messages in thread history (default)
+  logLevel: 'info', // Set logging level (default)
+  sinceId: '0', // Optional: If not set or set to '0', it will use the last mention ID on subsequent runs.
 };
 
 const twitterService = new TwitterService(config);
 
 // Handle new mentions from polling
-twitterService.on('newMention', async mentionEvent => {
+twitterService.on('mention', async mentionEvent => {
   console.log('New mention:', mentionEvent);
   // Handle the mention event
   await twitterService.replyToTweet(mentionEvent.tweetId, 'Thanks for the mention!');
@@ -53,6 +64,8 @@ twitterService.on('newMention', async mentionEvent => {
 
 // Handle rate limits
 twitterService.on('rateLimitWarning', warning => {
+  // warning contains: { tweetId: string, message: string, error: Error }
+  // Note: tweetId may be empty string when rate limit occurs during polling
   console.warn('Rate limit warning:', warning);
 });
 
@@ -61,13 +74,21 @@ twitterService.on('pollError', error => {
   console.error('Error during polling:', error);
 });
 
+// Handle tweet errors
+twitterService.on('tweetError', error => {
+  console.error('Error processing tweet:', error);
+});
+
 // Start the service (begins polling)
 await twitterService.start();
-```
+content_copy
+download
+Use code with caution.
+TypeScript
+LLM Tool Adapter
 
-### LLM Tool Adapter
+The LLMToolAdapter provides a higher-level interface specifically designed for LLM interactions. For a complete example, see examples/llmToolExample.ts in the repository.
 
-```typescript
 import { LLMToolAdapter } from 'base-twitter-adaptor';
 
 const twitterConfig = {
@@ -75,15 +96,15 @@ const twitterConfig = {
   apiSecret: process.env.X_API_SECRET!,
   accessToken: process.env.X_ACCESS_TOKEN,
   accessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET,
-  pollIntervalMs: 10000, // Poll every 10 seconds
-  includeOwnTweets: true,
-  logLevel: 'info',
+  pollIntervalMs: 60000, // Default: 60000 (1 minute)
+  threadHistoryLimit: 50, // Default: 50
+  logLevel: 'info', // Default: 'info'
 };
 
-const llmToolAdapter = new LLMToolAdapter({ twitterConfig });
+const llmTool = new LLMToolAdapter({ twitterConfig });
 
-// Handle Twitter events from polling
-llmToolAdapter.on('newTwitterMessage', response => {
+// Handle new twitter messages from polling
+llmTool.on('newTwitterMessage', response => {
   console.log('New twitter message for LLM:', response);
   // Send to your LLM
   // response.data contains:
@@ -93,124 +114,164 @@ llmToolAdapter.on('newTwitterMessage', response => {
   // - content: string (tweet text)
 });
 
-// Handle rate limit warnings
-llmToolAdapter.on('rateLimitWarning', rateLimit => {
-  console.warn('Rate limit warning:', rateLimit);
-  // rateLimit contains:
-  // - error: any (rate limit error details)
-  // - message: string (error message)
+// Handle rate limits
+llmTool.on('rateLimitWarning', warning => {
+  console.warn('Rate limit warning:', warning);
+  // warning contains: { error: Error, message: string }
+  // Note: tweetId may be empty string when rate limit occurs during polling
 });
 
-// Handle general errors
-llmToolAdapter.on('error', error => {
+// Handle errors
+llmTool.on('error', error => {
   console.error('Error:', error);
-  // error contains:
-  // - success: false
-  // - error: any (error details)
-  // - message: string (error description)
+    // error contains: { success: boolean, error: Error, message: string}
 });
 
-// Start the adapter (begins polling)
-const startResult = await llmToolAdapter.start();
-if (!startResult.success) {
-  console.error('Failed to start adapter:', startResult.error);
-  return;
-}
+// Start the service
+llmTool.start();
 
-// Example LLM actions with error handling
+// Example LLM actions
 try {
   // Get user profile
-  const profileResponse = await llmToolAdapter.getMyProfile();
-  if (!profileResponse.success) {
-    console.error('Failed to get profile:', profileResponse.error);
-    return;
-  }
-  const profile = profileResponse.data;
+  const profile = await llmTool.getMyProfile();
 
   // Post a tweet
-  const tweetResponse = await llmToolAdapter.postTweet('Hello from the LLM!');
-  if (!tweetResponse.success) {
-    console.error('Failed to post tweet:', tweetResponse.error);
-    return;
-  }
-  const tweet = tweetResponse.data;
+  const tweet = await llmTool.tweet('Hello from the LLM!');
 
   // Search tweets
-  const searchResponse = await llmToolAdapter.searchTweets('ai');
-  if (!searchResponse.success) {
-    console.error('Failed to search tweets:', searchResponse.error);
-    return;
-  }
-  const searchResults = searchResponse.data;
+  const searchResults = await llmTool.searchTweets('ai');
 
   // Reply to a tweet
-  const replyResponse = await llmToolAdapter.replyToTweet(tweet.id, 'Thanks for the mention!');
-  if (!replyResponse.success) {
-    console.error('Failed to reply:', replyResponse.error);
-    return;
-  }
-  const reply = replyResponse.data;
+  await llmTool.replyToTweet(tweet.id, 'This is a reply!');
+
+    // Access the raw Twitter API client for deleteTweet
+    const client = llmTool.getTwitterClient();
+    await client.v2.deleteTweet(tweet.id);
+    //Or
+   // await llmTool.deleteTweet(tweet.id)
 } catch (error) {
   console.error('Unexpected error:', error);
 }
-```
+content_copy
+download
+Use code with caution.
+TypeScript
+Features
 
-## Features
+Automated Mention Polling: Configurable polling interval for monitoring mentions
 
-- **Automated Mention Polling**: Configurable polling interval for monitoring mentions
-- **Thread Context Management**: Maintains conversation history with configurable limits
-- **Event-based Architecture**: Real-time events for mentions, rate limits, and errors
-- **Rate Limit Handling**: Built-in rate limit detection and warning events
-- **Type Safety**: Full TypeScript support with comprehensive type definitions
-- **LLM Integration**: Purpose-built adapter for LLM interactions
-- **Structured Logging**: Detailed logging with timestamps and metadata
-- **Error Handling**: Comprehensive error handling and event emission
+Thread Context Management: Maintains conversation history with configurable limits
 
-## Types
+Event-driven Architecture: Real-time events for mentions, rate limits, and errors
 
-### TwitterServiceConfig
+Rate Limit Handling: Built-in rate limit detection and warning events
 
-```typescript
+Type Safety: Full TypeScript support with comprehensive type definitions
+
+LLM Integration: Purpose-built adapter for LLM interactions
+
+Structured Logging: Detailed logging with timestamps and metadata
+
+Error Handling: Comprehensive error handling and event emission
+
+API Documentation
+TwitterService
+
+The core service that handles Twitter API interactions.
+
+Methods
+
+start(): Starts the polling service
+
+stop(): Stops the polling service
+
+replyToTweet(tweetId: string, text: string): Replies to a specific tweet
+
+tweet(text: string): Posts a new tweet
+
+getTwitterClient(): returns the underlying TwitterApi instance.
+
+Events
+
+mention: Emitted when a new mention is detected
+
+rateLimitWarning: Emitted when hitting rate limits
+
+pollError: Emitted when an error occurs during polling
+
+tweetError: Emitted when an error occurs processing a tweet
+
+LLMToolAdapter
+
+Higher-level adapter designed for LLM interactions.
+
+Methods
+
+start(): Starts the service
+
+getMyProfile(): Gets the authenticated user's profile
+
+tweet(text: string): Posts a new tweet
+
+replyToTweet(tweetId: string, text: string): Replies to a tweet
+
+searchTweets(query: string): Searches for tweets
+
+getTwitterClient(): Returns the underlying TwitterApi instance.
+
+deleteTweet(tweetId: string): Deletes a tweet
+
+Events
+
+newTwitterMessage: Emitted when a new mention is detected. Contains: { success: boolean, data: { messageId: string, threadId: string, userId: string, content: string } }
+
+rateLimitWarning: Emitted when hitting rate limits. Contains: { success: boolean, error: Error, message: string }
+
+error: Emitted when a general error occurs. Contains: { success: boolean, error: Error, message: string}
+
+Raw API Access
+
+Note that methods that are not directly provided on the TwitterService or LLMToolAdapter, such as deleteTweet, can be accessed by using the raw TwitterApi client. Both TwitterService and LLMToolAdapter have a getTwitterClient() method that provides access to the underlying Twitter API client. This client exposes the entire twitter-api-v2 interface, allowing for a high degree of customization.
+
+Types
+TwitterServiceConfig
 interface TwitterServiceConfig {
   apiKey: string;
   apiSecret: string;
   accessToken?: string;
   accessTokenSecret?: string;
-  bearerToken?: string;
+  bearerToken?: string; // Optional: Used as fallback if access token is not provided
   pollIntervalMs?: number; // Default: 60000 (1 minute)
   threadHistoryLimit?: number; // Default: 50 messages
-  sinceId?: string; // Start polling from a specific tweet ID
-  skipInitialPoll?: boolean; // Skip the first poll on startup
-  includeOwnTweets?: boolean; // Include tweets from the authenticated user
+   sinceId?: string; // Optional: If not set or set to '0', it will use the last mention ID on subsequent runs.
   logLevel?: 'error' | 'warn' | 'info' | 'debug' | 'silent'; // Default: 'info'
 }
-```
-
-### MentionEvent
-
-```typescript
+content_copy
+download
+Use code with caution.
+TypeScript
+MentionEvent
 interface MentionEvent {
   threadId: string;
   userId: string;
   message: string;
   tweetId: string;
 }
-```
-
-### LLMResponse
-
-```typescript
-interface LLMResponse {
-  success: boolean;
-  message?: string;
-  error?: any;
-  data?: any;
+content_copy
+download
+Use code with caution.
+TypeScript
+RateLimitEvent
+interface RateLimitEvent {
+  tweetId: string; // May be empty string during polling
+  message: string;
+  error: Error;
 }
-```
-
-## Development
-
-```bash
+content_copy
+download
+Use code with caution.
+TypeScript
+Development
 # Install dependencies
 npm install
 
@@ -219,12 +280,15 @@ npm run build
 
 # Run tests
 npm test
-```
-
-## Contributing
+content_copy
+download
+Use code with caution.
+Bash
+Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## License
+License
 
 MIT
+
