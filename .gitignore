@@ -26,3 +26,6 @@ logs/
 
 # Test coverage
 coverage/ 
+
+# Repomix output
+repomix-output.txt 
