@@ -186,6 +186,7 @@ export class TwitterService {
       // Update last mention ID with the most recent tweet
       if (tweets[0]) {
         this.lastMentionId = tweets[0].id;
+        console.log('Updated lastMentionId:', this.lastMentionId);
         this.logger.debug(`Found ${tweets.length} tweets, lastMentionId is now: ${this.lastMentionId}`);
       } else {
         this.logger.debug('No tweets found, lastMentionId remains:', this.lastMentionId);

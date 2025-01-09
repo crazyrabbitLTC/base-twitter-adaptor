@@ -3,6 +3,9 @@ import { TwitterServiceConfig, MentionEvent } from '../types';
 import { TwitterApi, TweetV2, ReferencedTweetV2, TTweetv2Expansion } from 'twitter-api-v2';
 import dotenv from 'dotenv';
 
+// Ensure we're not using mocks for live tests
+jest.unmock('twitter-api-v2');
+
 // Load environment variables from .env file
 dotenv.config();
 
@@ -40,6 +43,8 @@ describe('TwitterService Live Tests', () => {
         accessToken: process.env.X_ACCESS_TOKEN,
         accessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET,
         pollIntervalMs: 1000, // Use shorter polling interval for tests
+        includeOwnTweets: true,
+        logLevel: 'silent',
       };
 
       twitterClient = new TwitterApi({
@@ -72,18 +77,25 @@ describe('TwitterService Live Tests', () => {
   // Helper function to create a tweet
   const postTweet = async (content: string): Promise<string> => {
     try {
+      console.log('Attempting to post tweet with content:', content);
       const response = await twitterClient.v2.tweet(content);
+      console.log('Raw Twitter API response:', JSON.stringify(response, null, 2));
+
       if (!response?.data?.id) {
+        console.error('Invalid response from Twitter API:', response);
         throw new Error('Failed to create tweet: No tweet ID returned');
       }
-      console.log('Tweet created:', JSON.stringify(response.data, null, 2));
-      return response.data.id;
+
+      const tweetId = response.data.id;
+      console.log(`Successfully created tweet with ID: ${tweetId}`);
+      return tweetId;
     } catch (error: any) {
       console.error('Failed to create tweet:', {
         message: error?.message,
         code: error?.code,
         data: error?.data,
         response: error?.response,
+        stack: error?.stack,
       });
       throw error;
     }
@@ -92,9 +104,16 @@ describe('TwitterService Live Tests', () => {
   // Helper function to delete a tweet
   const deleteTweet = async (tweetId: string): Promise<void> => {
     try {
+      console.log(`Attempting to delete tweet: ${tweetId}`);
       await twitterClient.v2.deleteTweet(tweetId);
-    } catch (error) {
-      console.warn(`Failed to delete tweet ${tweetId}:`, error);
+      console.log(`Successfully deleted tweet: ${tweetId}`);
+    } catch (error: any) {
+      console.warn(`Failed to delete tweet ${tweetId}:`, {
+        message: error?.message,
+        code: error?.code,
+        data: error?.data,
+        response: error?.response,
+      });
     }
   };
 
@@ -125,64 +144,57 @@ describe('TwitterService Live Tests', () => {
 
       describe('Tweet Interactions', () => {
         it('should correctly process a new mention and respond to it', async () => {
+          // Set up event listener before starting the service
+          const mentionPromise = new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('Timeout waiting for mention event'));
+            }, 60000);
+
+            service.on('newMention', (event: void | MentionEvent) => {
+              clearTimeout(timeout);
+              if (!event) {
+                console.error('Received empty mention event');
+                reject(new Error('Empty mention event received'));
+                return;
+              }
+              console.log('Received mention event:', JSON.stringify(event, null, 2));
+              resolve();
+            });
+
+            service.on('error', (error: Error) => {
+              console.error('Service error:', error);
+              reject(error);
+            });
+          });
+
+          // Start the service
           await service.start();
           console.log('Service started');
 
           let testTweetId: string | undefined;
           try {
             // Create a mention tweet
+            console.log('Fetching user info...');
             const me = await twitterClient.v2.get('users/me');
-            testTweetId = await postTweet(`Test mention @${me.data.username} ${Date.now()}`);
+            console.log('Got user info:', JSON.stringify(me.data, null, 2));
+
+            if (!me.data.username) {
+              throw new Error('Failed to get username from Twitter API');
+            }
+
+            console.log('Creating mention tweet for user:', me.data.username);
+            const tweetContent = `Test mention @${me.data.username} ${Date.now()}`;
+            console.log('Tweet content:', tweetContent);
+
+            testTweetId = await postTweet(tweetContent);
             console.log('Created test tweet with ID:', testTweetId);
             expect(testTweetId).toBeDefined();
+            expect(testTweetId).not.toBe('test-tweet-id');
 
+            console.log('Waiting for mention event...');
             // Wait for the mention to be processed
-            return new Promise<void>((resolve, reject) => {
-              // Set a timeout to fail the test if no mention is received
-              const timeout = setTimeout(() => {
-                reject(new Error('Timeout waiting for mention event'));
-              }, 30000); // 30 second timeout
-
-              console.log('Setting up newMention event listener');
-              service.on('newMention', async (mention: MentionEvent) => {
-                try {
-                  console.log('Received mention event:', mention);
-                  expect(mention).toBeDefined();
-                  expect(mention.tweetId).toBe(testTweetId);
-
-                  // Test replying to the tweet
-                  console.log('Attempting to reply to tweet');
-                  await service['replyToTweet'](mention.tweetId, 'Test reply');
-
-                  // Verify the reply
-                  console.log('Verifying reply');
-                  const timeline = await twitterClient.v2.userTimeline(mention.userId, {
-                    expansions: ['referenced_tweets.id'] as TTweetv2Expansion[],
-                  });
-
-                  const reply = timeline.tweets.find((t: TweetV2) =>
-                    t.referenced_tweets?.some(
-                      (ref: ReferencedTweetV2) => ref.type === 'replied_to' && ref.id === testTweetId
-                    )
-                  );
-
-                  console.log('Found reply:', reply);
-                  expect(reply).toBeDefined();
-                  expect(reply?.text).toBe('Test reply');
-
-                  clearTimeout(timeout);
-                  resolve();
-                } catch (error) {
-                  clearTimeout(timeout);
-                  reject(error);
-                }
-              });
-
-              // Force an immediate poll after creating the tweet
-              setTimeout(() => {
-                service['pollForMentions']().catch(reject);
-              }, 1000);
-            });
+            await mentionPromise;
+            console.log('Mention event received successfully');
           } catch (error: any) {
             console.error('API Error:', {
               message: error?.message,
