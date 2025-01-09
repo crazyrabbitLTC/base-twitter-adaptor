@@ -1,6 +1,6 @@
 {
   "name": "base-twitter-adaptor",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A type-safe Twitter API adapter with built-in LLM support for building AI-powered Twitter bots",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
