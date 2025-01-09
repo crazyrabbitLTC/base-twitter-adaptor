@@ -1,7 +1,7 @@
-import { TwitterServiceConfig, MentionEvent, Message, ThreadContext, RateLimitEvent } from "./types";
-import winston from "winston";
-import { EventEmitter } from "events";
-import { TwitterApi, TweetV2, Tweetv2SearchParams } from "twitter-api-v2";
+import { TwitterServiceConfig, MentionEvent, Message, ThreadContext, RateLimitEvent } from './types';
+import winston from 'winston';
+import { EventEmitter } from 'events';
+import { TwitterApi, TweetV2, Tweetv2SearchParams } from 'twitter-api-v2';
 
 /**
  * Service for handling Twitter interactions using polling
@@ -39,12 +39,12 @@ export class TwitterService {
 
     // Initialize logger with timestamp
     this.logger = winston.createLogger({
-      level: "info",
+      level: 'info',
       format: winston.format.combine(
         winston.format.timestamp(),
-        winston.format.printf(({ level, message, timestamp, ...meta }) => {
-          return `${timestamp} [${level}]: ${message} ${
-            Object.keys(meta).length ? JSON.stringify(meta) : ""
+        winston.format.printf((info: winston.Logform.TransformableInfo) => {
+          return `${info.timestamp} [${info.level}]: ${info.message} ${
+            Object.keys(info).length > 3 ? JSON.stringify(info) : ''
           }`;
         })
       ),
@@ -85,14 +85,11 @@ export class TwitterService {
 
       // Start polling for mentions
       await this.pollForMentions();
-      this.pollInterval = setInterval(
-        () => this.pollForMentions(),
-        this.config.pollIntervalMs
-      );
+      this.pollInterval = setInterval(() => this.pollForMentions(), this.config.pollIntervalMs);
 
-      this.logger.info("Twitter service started");
+      this.logger.info('Twitter service started');
     } catch (error) {
-      this.logger.error("Failed to start Twitter service", { error });
+      this.logger.error('Failed to start Twitter service', { error });
       throw error;
     }
   }
@@ -109,13 +106,13 @@ export class TwitterService {
 
       // Clear all event listeners
       this.emitter.removeAllListeners();
-      
+
       // Clear thread history
       this.threads.clear();
 
-      this.logger.info("Twitter service stopped");
+      this.logger.info('Twitter service stopped');
     } catch (error) {
-      this.logger.error("Failed to stop Twitter service", { error });
+      this.logger.error('Failed to stop Twitter service', { error });
       throw error;
     }
   }
@@ -133,30 +130,30 @@ export class TwitterService {
 
       const query = `@${this.currentUsername}`;
       const searchParameters: Partial<Tweetv2SearchParams> = {
-        "tweet.fields": ["conversation_id", "author_id", "created_at"],
+        'tweet.fields': ['conversation_id', 'author_id', 'created_at'],
         since_id: this.lastMentionId,
-        max_results: 100
+        max_results: 100,
       };
 
       const searchResponse = await this.twitterClient.v2.search(query, searchParameters);
-      
+
       if (!searchResponse?.data) return;
-      
+
       const tweets = Array.isArray(searchResponse.data) ? searchResponse.data : [searchResponse.data];
       if (tweets.length > 0) {
         this.lastMentionId = tweets[0].id; // Update last mention ID
-        
+
         // Process mentions in chronological order (oldest first)
         for (const mention of [...tweets].reverse()) {
           // Skip tweets with missing required fields
           if (!mention.conversation_id || !mention.author_id || !mention.created_at) {
-            this.logger.warn("Incomplete tweet data", { mention });
+            this.logger.warn('Incomplete tweet data', { mention });
             continue;
           }
 
           // Skip tweets from the authenticated user
           if (mention.author_id === this.currentUserId) {
-            this.logger.debug("Skipping own tweet", { tweetId: mention.id });
+            this.logger.debug('Skipping own tweet', { tweetId: mention.id });
             continue;
           }
 
@@ -167,26 +164,26 @@ export class TwitterService {
             conversation_id: mention.conversation_id,
             author_id: mention.author_id,
             created_at: mention.created_at,
-            edit_history_tweet_ids: [mention.id]
+            edit_history_tweet_ids: [mention.id],
           };
 
           await this.handleMention({
-            tweet: tweetData
+            tweet: tweetData,
           });
         }
       }
     } catch (error: any) {
       if (error?.data?.status === 429) {
         const rateLimitEvent: RateLimitEvent = {
-          tweetId: "",
-          message: "",
+          tweetId: '',
+          message: '',
           error,
         };
-        this.logger.warn("Rate limited when polling for mentions", { error });
-        this.emit("rateLimitWarning", rateLimitEvent);
+        this.logger.warn('Rate limited when polling for mentions', { error });
+        this.emit('rateLimitWarning', rateLimitEvent);
       } else {
-        this.logger.error("Error polling for mentions", { error });
-        this.emit("pollError", { error });
+        this.logger.error('Error polling for mentions', { error });
+        this.emit('pollError', { error });
       }
     }
   }
@@ -195,21 +192,21 @@ export class TwitterService {
    * Processes mention events
    */
   private async handleMention(mention: { tweet: TweetV2 }) {
-    this.logger.info("Processing mention", mention);
+    this.logger.info('Processing mention', mention);
 
     const tweet = mention.tweet;
     if (!tweet) {
-      this.logger.warn("No tweet data in mention", { mention });
+      this.logger.warn('No tweet data in mention', { mention });
       return;
     }
 
     // Ensure required fields are present
     if (!tweet.text || !tweet.id || !tweet.conversation_id || !tweet.author_id) {
-      this.logger.warn("Missing required tweet fields", { tweet });
+      this.logger.warn('Missing required tweet fields', { tweet });
       return;
     }
 
-    this.logger.info("Valid mention", {
+    this.logger.info('Valid mention', {
       text: tweet.text,
       id: tweet.id,
     });
@@ -228,7 +225,7 @@ export class TwitterService {
       content: mentionEvent.message,
     });
 
-    this.emit("newMention", mentionEvent);
+    this.emit('newMention', mentionEvent);
   }
 
   /**
@@ -239,10 +236,10 @@ export class TwitterService {
       const response = await this.twitterClient.v2.tweet({
         text: message,
         reply: {
-          in_reply_to_tweet_id: tweetId
-        }
+          in_reply_to_tweet_id: tweetId,
+        },
       });
-      this.logger.info("Successfully responded to tweet", {
+      this.logger.info('Successfully responded to tweet', {
         tweetId,
         message,
         response,
@@ -255,15 +252,15 @@ export class TwitterService {
           message,
           error,
         };
-        this.logger.warn("Rate limited when attempting to respond to tweet", rateLimitEvent);
-        this.emit("rateLimitWarning", rateLimitEvent);
+        this.logger.warn('Rate limited when attempting to respond to tweet', rateLimitEvent);
+        this.emit('rateLimitWarning', rateLimitEvent);
       } else {
-        this.logger.error("Failed to respond to tweet", {
+        this.logger.error('Failed to respond to tweet', {
           tweetId,
           message,
           error,
         });
-        this.emit("tweetError", { tweetId, message, error });
+        this.emit('tweetError', { tweetId, message, error });
       }
       throw error;
     }
@@ -290,10 +287,7 @@ export class TwitterService {
     threadContext.history.push(message);
 
     // Apply history limit if configured
-    if (
-      this.config.threadHistoryLimit &&
-      threadContext.history.length > this.config.threadHistoryLimit
-    ) {
+    if (this.config.threadHistoryLimit && threadContext.history.length > this.config.threadHistoryLimit) {
       threadContext.history = threadContext.history.slice(-this.config.threadHistoryLimit);
     }
   }
@@ -306,7 +300,7 @@ export class TwitterService {
       const response = await this.twitterClient.v2.get('users/me');
       return response.data;
     } catch (error) {
-      this.logger.error("Failed to get user profile", { error });
+      this.logger.error('Failed to get user profile', { error });
       throw error;
     }
   }
@@ -317,13 +311,13 @@ export class TwitterService {
   public async searchTweets(query: string) {
     try {
       const searchParameters: Partial<Tweetv2SearchParams> = {
-        "tweet.fields": ["conversation_id", "author_id", "created_at"],
-        max_results: 100
+        'tweet.fields': ['conversation_id', 'author_id', 'created_at'],
+        max_results: 100,
       };
       const response = await this.twitterClient.v2.search(query, searchParameters);
       return response.data;
     } catch (error) {
-      this.logger.error("Failed to search tweets", { error });
+      this.logger.error('Failed to search tweets', { error });
       throw error;
     }
   }
@@ -334,22 +328,22 @@ export class TwitterService {
   public async tweet(text: string) {
     try {
       const response = await this.twitterClient.v2.tweet(text);
-      this.logger.info("Successfully posted tweet", { text });
+      this.logger.info('Successfully posted tweet', { text });
       return response;
     } catch (error: any) {
       if (error?.data?.status === 429) {
         const rateLimitEvent: RateLimitEvent = {
-          tweetId: "",
+          tweetId: '',
           message: text,
           error,
         };
-        this.logger.warn("Rate limited when attempting to post tweet", rateLimitEvent);
-        this.emit("rateLimitWarning", rateLimitEvent);
+        this.logger.warn('Rate limited when attempting to post tweet', rateLimitEvent);
+        this.emit('rateLimitWarning', rateLimitEvent);
       } else {
-        this.logger.error("Failed to post tweet", { text, error });
-        this.emit("tweetError", { message: text, error });
+        this.logger.error('Failed to post tweet', { text, error });
+        this.emit('tweetError', { message: text, error });
       }
       throw error;
     }
   }
-} 
+}
