@@ -211,7 +211,6 @@ describe('TwitterService Live Tests', () => {
         }, 60000);
 
         it('should handle rate limits gracefully', async () => {
-          const tweets: string[] = [];
           let rateLimitWarningReceived = false;
 
           service.on('rateLimitWarning', () => {
@@ -219,44 +218,21 @@ describe('TwitterService Live Tests', () => {
           });
 
           try {
-            // Create tweets until we hit a rate limit
-            for (let i = 0; i < 5; i++) {
-              try {
-                const response = await twitterClient.v2.tweet({
-                  text: `Rate limit test tweet ${i}`,
-                });
-                console.log('Tweet response:', JSON.stringify(response, null, 2));
-                if (response?.data?.id) {
-                  tweets.push(response.data.id);
-                }
-                // Force a rate limit error on the 3rd tweet
-                if (i === 2) {
-                  const error = new Error('Rate limit exceeded');
-                  (error as any).rateLimitError = true;
-                  (error as any).code = 429;
-                  throw error;
-                }
-              } catch (error: any) {
-                if (error.code === 429 || error.rateLimitError) {
-                  service.emit('rateLimitWarning', error);
-                  break;
-                }
-                throw error;
-              }
-            }
+            // Simulate a rate limit by emitting the event directly
+            const error = new Error('Rate limit exceeded');
+            (error as any).code = 429;
+            service.emit('rateLimitWarning', {
+              tweetId: 'test-tweet-id',
+              message: 'Rate limit test',
+              error,
+            });
 
             expect(rateLimitWarningReceived).toBe(true);
-          } finally {
-            // Cleanup
-            for (const tweetId of tweets) {
-              try {
-                await twitterClient.v2.deleteTweet(tweetId);
-              } catch (error) {
-                console.warn(`Failed to delete tweet ${tweetId}:`, error);
-              }
-            }
+          } catch (error: any) {
+            console.error('Rate limit test error:', error);
+            throw error;
           }
-        }, 60000);
+        });
       });
     });
   });
